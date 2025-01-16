@@ -1,59 +1,23 @@
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
-
 import { useColorScheme } from '@/components/useColorScheme';
-
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+import { Stack } from 'expo-router';
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    ...FontAwesome.font,
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <Stack>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="RegisterScreen" options={{ title: 'Register' }} />
+      <Stack.Screen name="ResetPasswordScreen" options={{ title: 'Reset Password' }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="ProfileScreen" options={{ title: 'Profile' }} />
+      <Stack.Screen name="onboarding/GoalScreen" options={{ title: 'Set Your Goal' }} />
+      <Stack.Screen name="onboarding/GenderScreen" options={{ title: 'Select Gender' }} />
+      <Stack.Screen name="onboarding/ActivityScreen" options={{ title: 'Select Activity Level' }} />
+      <Stack.Screen name="onboarding/HeightScreen" options={{ title: 'Enter Height' }} />
+      <Stack.Screen name="onboarding/WeightScreen" options={{ title: 'Enter Weight' }} />
+      <Stack.Screen name="onboarding/AgeScreen" options={{ title: 'Enter Age' }} />
+      <Stack.Screen name="onboarding/ResultsScreen" options={{ title: 'Results' }} />
+    </Stack>
   );
 }
