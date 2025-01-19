@@ -1,12 +1,9 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Tabs, useSegments } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 
-import { useColorScheme } from '@/components/useColorScheme';
-import Colors from '@/constants/Colors';
-
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
   color: string;
@@ -24,108 +21,114 @@ function TabBarIcon(props: {
   );
 }
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+function Background({ activeIndex }: { activeIndex: number }) {
+  const { width } = Dimensions.get('window');
+  const tabWidth = width / 3; // Assuming three tabs
+
+  const curveWidth = tabWidth * 0.5; // Width of the curve
+  const curveMidX = activeIndex * tabWidth + tabWidth / 2; // Center of the active tab
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: '#fff',
-        tabBarInactiveTintColor: '#31256C',
-        headerStyle: {
-          backgroundColor: '#31256C',
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopWidth: 0,
-          height: 80,
-          marginHorizontal: 20,
-          marginBottom: 20,
-          borderRadius: 15,
-          position: 'absolute',
-          bottom: 20,
-          left: 20,
-          right: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.2,
-          shadowRadius: 4,
-          elevation: 5,
-        },
-        tabBarShowLabel: false,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, focused }) => <TabBarIcon name="dashboard" color={color} focused={focused} />,
-          headerRight: () => (
-            <Link href="/ProfileScreen" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="user-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
-        }}
+    <Svg
+      width={width}
+      height={100}
+      style={{ position: 'absolute', bottom: 0, left: 0 }}
+      viewBox={`0 0 ${width} 100`}
+    >
+      <Path
+        d={`
+          M0 0 
+          L${curveMidX - curveWidth} 0 
+          Q${curveMidX} 50, ${curveMidX + curveWidth} 0 
+          L${width} 0 
+          L${width} 100 
+          L0 100 
+          Z
+        `}
+        fill="#AA9BD2"
       />
-      <Tabs.Screen
-        name="two"
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color, focused }) => <TabBarIcon name="map" color={color} focused={focused} />,
-          headerRight: () => (
-            <Link href="/ProfileScreen" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="user-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
+    </Svg>
+  );
+}
+
+export default function TabLayout() {
+  const segments = useSegments();
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const activeTab = segments[segments.length - 1];
+    switch (activeTab) {
+      case 'index':
+        setActiveIndex(0);
+        break;
+      case 'two':
+        setActiveIndex(1);
+        break;
+      case 'reports':
+        setActiveIndex(2);
+        break;
+      default:
+        setActiveIndex(0);
+    }
+  }, [segments]);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#FAFAFA' }}>
+      {/* Dynamic background */}
+      <Background activeIndex={activeIndex} />
+      <Tabs
+        screenOptions={{
+          tabBarActiveTintColor: '#fff',
+          tabBarInactiveTintColor: '#31256C',
+          headerStyle: {
+            backgroundColor: '#31256C',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+          tabBarStyle: styles.tabBarStyle,
+          tabBarShowLabel: false,
         }}
-      />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          title: 'Reports',
-          tabBarIcon: ({ color, focused }) => <TabBarIcon name="file-text" color={color} focused={focused} />,
-          headerRight: () => (
-            <Link href="/ProfileScreen" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="user-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Dashboard',
+            tabBarIcon: ({ color, focused }) => <TabBarIcon name="dashboard" color={color} focused={focused} />,
+          }}
+        />
+        <Tabs.Screen
+          name="two"
+          options={{
+            title: 'Map',
+            tabBarIcon: ({ color, focused }) => <TabBarIcon name="map" color={color} focused={focused} />,
+          }}
+        />
+        <Tabs.Screen
+          name="reports"
+          options={{
+            title: 'Reports',
+            tabBarIcon: ({ color, focused }) => <TabBarIcon name="file-text" color={color} focused={focused} />,
+          }}
+        />
+      </Tabs>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  tabBarStyle: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    height: 80,
+    backgroundColor: '#AA9BD2', // Background is now consistent with your request
+    borderRadius: 25,
+    overflow: 'hidden',
+    borderTopWidth: 0,
+  },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',

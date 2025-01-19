@@ -1,8 +1,8 @@
 import axios from 'axios';
 import * as Location from 'expo-location';
 import React, { useEffect, useState } from 'react';
-import { Button, Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MapView, { Circle, Marker } from 'react-native-maps';
+import { Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCKtCGcYIWy2tGlvN8E2MADnEj1bxJ3Hp8';
 const NUTRITIONIX_API_KEY = 'fd960d561e6cbf69af473581dcf31b1f';
@@ -27,6 +27,7 @@ interface Restaurant {
 
 interface NutritionInfo {
   food_name: string;
+  brand_name?: string;
   serving_qty: number;
   serving_unit: string;
   nf_calories: number;
@@ -39,8 +40,8 @@ export default function MapScreen() {
   const [location, setLocation] = useState<LocationCoords | null>(null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [query, setQuery] = useState<string>('');
+  const [popupData, setPopupData] = useState<NutritionInfo[]>([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
-  const [nutritionInfo, setNutritionInfo] = useState<NutritionInfo[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -52,27 +53,25 @@ export default function MapScreen() {
 
       let location = await Location.getCurrentPositionAsync({});
       setLocation(location.coords);
-
-      fetchNearbyRestaurants(location.coords);
     })();
   }, []);
 
-  const fetchNearbyRestaurants = async (coords: LocationCoords) => {
+  const fetchNearbyRestaurants = async (query: string) => {
+    if (!location) return;
     try {
       const response = await axios.get(
-        `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coords.latitude},${coords.longitude}&radius=1500&type=restaurant&key=${GOOGLE_MAPS_API_KEY}`
+        `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&location=${location.latitude},${location.longitude}&radius=1500&key=${GOOGLE_MAPS_API_KEY}`
       );
-      const places = response.data.results;
-      setRestaurants(places);
+      setRestaurants(response.data.results);
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching nearby restaurants:', error);
     }
   };
 
-  const fetchNutritionInfo = async (restaurantName: string) => {
+  const fetchMenuItems = async (restaurantName: string) => {
     try {
       const response = await axios.get(
-        `https://trackapi.nutritionix.com/v2/search/instant?query=${restaurantName} restaurant`,
+        `https://trackapi.nutritionix.com/v2/search/instant?query=${restaurantName}`,
         {
           headers: {
             'x-app-id': NUTRITIONIX_APP_ID,
@@ -80,40 +79,58 @@ export default function MapScreen() {
           },
         }
       );
-      setNutritionInfo(response.data.common);
+      setPopupData(response.data.branded || []);
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching menu items:', error);
     }
   };
 
   const handleSearch = async () => {
-    if (location && query) {
-      try {
-        const response = await axios.get(
-          `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&location=${location.latitude},${location.longitude}&radius=1500&type=restaurant&key=${GOOGLE_MAPS_API_KEY}`
-        );
-        const places = response.data.results;
-        setRestaurants(places);
-      } catch (error) {
-        console.error(error);
-      }
-    }
+    if (!query) return;
+    await fetchNearbyRestaurants(query);
+    await fetchMenuItems(query);
   };
 
   const handleMarkerPress = async (restaurantName: string) => {
     setSelectedRestaurant(restaurantName);
-    await fetchNutritionInfo(restaurantName);
+    await fetchMenuItems(restaurantName);
   };
+
+  const handleMapPress = () => {
+    setSelectedRestaurant(null);
+    setPopupData([]);
+  };
+
+  const renderPopup = () => (
+    <View style={styles.popup}>
+      <ScrollView>
+        {popupData.map((item, index) => (
+          <View key={index} style={styles.menuItem}>
+            <Text style={styles.menuText}>Food: {item.food_name}</Text>
+            <Text style={styles.menuText}>Calories: {item.nf_calories}</Text>
+            <Text style={styles.menuText}>
+              Protein: {item.nf_protein}g, Fats: {item.nf_total_fat}g, Carbs: {item.nf_total_carbohydrate}g
+            </Text>
+            <TouchableOpacity style={styles.addButton}>
+              <Text style={styles.addButtonText}>Add to Log</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <TextInput
         style={styles.searchInput}
-        placeholder="Search for restaurants"
+        placeholder="Search for restaurants or food items"
         value={query}
         onChangeText={setQuery}
       />
-      <Button title="Search" onPress={handleSearch} />
+      <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+        <Text style={styles.searchButtonText}>Search</Text>
+      </TouchableOpacity>
       {location && (
         <MapView
           style={styles.map}
@@ -123,24 +140,8 @@ export default function MapScreen() {
             latitudeDelta: 0.0922,
             longitudeDelta: 0.0421,
           }}
+          onPress={handleMapPress}
         >
-          <Marker
-            coordinate={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-            }}
-            title="Your Location"
-            pinColor="blue"
-          />
-          <Circle
-            center={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-            }}
-            radius={1500}
-            strokeColor="rgba(0, 0, 255, 0.5)"
-            fillColor="rgba(0, 0, 255, 0.1)"
-          />
           {restaurants.map((restaurant) => (
             <Marker
               key={restaurant.place_id}
@@ -155,26 +156,7 @@ export default function MapScreen() {
           ))}
         </MapView>
       )}
-      {selectedRestaurant && (
-        <View style={styles.overlay}>
-          <Text style={styles.overlayTitle}>{selectedRestaurant}</Text>
-          <ScrollView>
-            {nutritionInfo.map((item, index) => (
-              <View key={index} style={styles.nutritionItem}>
-                <Text style={styles.nutritionText}>Food: {item.food_name}</Text>
-                <Text style={styles.nutritionText}>Serving: {item.serving_qty} {item.serving_unit}</Text>
-                <Text style={styles.nutritionText}>Calories: {item.nf_calories}</Text>
-                <Text style={styles.nutritionText}>Fat: {item.nf_total_fat}g</Text>
-                <Text style={styles.nutritionText}>Protein: {item.nf_protein}g</Text>
-                <Text style={styles.nutritionText}>Carbs: {item.nf_total_carbohydrate}g</Text>
-              </View>
-            ))}
-          </ScrollView>
-          <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedRestaurant(null)}>
-            <Text style={styles.closeButtonText}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {popupData.length > 0 && renderPopup()}
     </View>
   );
 }
@@ -190,50 +172,54 @@ const styles = StyleSheet.create({
   searchInput: {
     position: 'absolute',
     top: 10,
-    width: '90%',
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 5,
+    left: 10,
+    right: 10,
     zIndex: 1,
-    alignSelf: 'center',
-  },
-  overlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '40%',
-    backgroundColor: '#fff',
-    padding: 10,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  overlayTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  nutritionItem: {
-    marginBottom: 10,
-  },
-  nutritionText: {
-    fontSize: 16,
-  },
-  closeButton: {
-    marginTop: 10,
-    backgroundColor: '#31256C',
-    padding: 10,
+    backgroundColor: 'white',
     borderRadius: 5,
+    padding: 10,
+  },
+  searchButton: {
+    position: 'absolute',
+    top: 60,
+    left: 10,
+    right: 10,
+    zIndex: 1,
+    backgroundColor: '#31256C',
+    borderRadius: 5,
+    padding: 10,
     alignItems: 'center',
   },
-  closeButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  searchButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  popup: {
+    position: 'absolute',
+    left: 10,
+    top: 120,
+    bottom: 10,
+    width: '40%',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 10,
+    zIndex: 1,
+  },
+  menuItem: {
+    marginBottom: 10,
+  },
+  menuText: {
+    fontSize: 14,
+    marginBottom: 5,
+  },
+  addButton: {
+    backgroundColor: '#31256C',
+    borderRadius: 5,
+    padding: 5,
+    alignItems: 'center',
+  },
+  addButtonText: {
+    color: 'white',
     fontWeight: 'bold',
   },
 });
