@@ -62,8 +62,8 @@ const styles = StyleSheet.create({
     marginVertical: 15,
     paddingHorizontal: 25,
     fontSize: 16,
-    color: '#3C4858',
-    shadowColor: '#9E9E9E',
+    color: '#31256C',
+    shadowColor: '#31256C',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   button: {
     width: '90%',
     marginVertical: 15,
-    backgroundColor: '#5C6BC0',
+    backgroundColor: '#31256C',
     padding: 20,
     borderRadius: 15,
     alignItems: 'center',
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   text: {
-    color: '#FFFFFF',
+    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
   },

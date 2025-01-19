@@ -24,6 +24,7 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   useEffect(() => {
+    // Fetch user data from Firestore
     const fetchUserData = async () => {
       const user = auth.currentUser;
       if (user) {
@@ -39,12 +40,15 @@ export default function ProfileScreen() {
   }, []);
 
   useEffect(() => {
+    // Listen for authentication state changes
     const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (!user) router.replace('/');
+      if (!user && router.pathname !== '/') {
+        router.replace('/'); // Redirect to login page if user is not logged in
+      }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   const handleSignOut = async () => {
     try {
@@ -66,7 +70,9 @@ export default function ProfileScreen() {
           {userData.weight && <Text style={styles.infoText}>Weight: {userData.weight} kg</Text>}
           {userData.height && <Text style={styles.infoText}>Height: {userData.height} cm</Text>}
           {userData.gender && <Text style={styles.infoText}>Gender: {userData.gender}</Text>}
-          {userData.activityLevel && <Text style={styles.infoText}>Activity Level: {userData.activityLevel}</Text>}
+          {userData.activityLevel && (
+            <Text style={styles.infoText}>Activity Level: {userData.activityLevel}</Text>
+          )}
           {userData.goal && <Text style={styles.infoText}>Goal: {userData.goal}</Text>}
           {userData.protein && <Text style={styles.infoText}>Protein: {userData.protein.toFixed(2)}g</Text>}
           {userData.fats && <Text style={styles.infoText}>Fats: {userData.fats.toFixed(2)}g</Text>}
@@ -92,7 +98,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
     marginBottom: 40,
-    color: '#1A237E',
+    color: '#31256C',
   },
   userInfo: {
     marginBottom: 20,
@@ -104,12 +110,12 @@ const styles = StyleSheet.create({
   button: {
     width: '90%',
     marginVertical: 15,
-    backgroundColor: '#6200ee',
+    backgroundColor: '#31256C',
     padding: 20,
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6200ee',
+    shadowColor: '#31256C',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 5,

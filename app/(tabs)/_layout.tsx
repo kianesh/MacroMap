@@ -1,7 +1,7 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, Tabs } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, View, Text } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -18,9 +18,8 @@ function TabBarIcon(props: {
         size={28}
         style={{ marginBottom: -3 }}
         {...props}
-        color={props.focused ? '#fff' : '#6200ee'}
+        color={props.focused ? '#fff' : '#31256C'}
       />
-      {props.focused && <Text style={styles.iconLabel}>{props.name}</Text>}
     </View>
   );
 }
@@ -32,9 +31,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#fff',
-        tabBarInactiveTintColor: '#6200ee',
+        tabBarInactiveTintColor: '#31256C',
         headerStyle: {
-          backgroundColor: '#6200ee',
+          backgroundColor: '#31256C',
         },
         headerTintColor: '#fff',
         headerTitleStyle: {
@@ -57,17 +56,13 @@ export default function TabLayout() {
           shadowRadius: 4,
           elevation: 5,
         },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-        },
+        tabBarShowLabel: false,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, focused }) => <TabBarIcon name="dashboard" color={color} focused={focused} />,
-          tabBarLabel: 'Dashboard',
           headerRight: () => (
             <Link href="/ProfileScreen" asChild>
               <Pressable>
@@ -89,7 +84,20 @@ export default function TabLayout() {
         options={{
           title: 'Map',
           tabBarIcon: ({ color, focused }) => <TabBarIcon name="map" color={color} focused={focused} />,
-          tabBarLabel: 'Map',
+          headerRight: () => (
+            <Link href="/ProfileScreen" asChild>
+              <Pressable>
+                {({ pressed }) => (
+                  <FontAwesome
+                    name="user-circle"
+                    size={25}
+                    color={Colors[colorScheme ?? 'light'].text}
+                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
+                  />
+                )}
+              </Pressable>
+            </Link>
+          ),
         }}
       />
       <Tabs.Screen
@@ -97,7 +105,20 @@ export default function TabLayout() {
         options={{
           title: 'Reports',
           tabBarIcon: ({ color, focused }) => <TabBarIcon name="file-text" color={color} focused={focused} />,
-          tabBarLabel: 'Reports',
+          headerRight: () => (
+            <Link href="/ProfileScreen" asChild>
+              <Pressable>
+                {({ pressed }) => (
+                  <FontAwesome
+                    name="user-circle"
+                    size={25}
+                    color={Colors[colorScheme ?? 'light'].text}
+                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
+                  />
+                )}
+              </Pressable>
+            </Link>
+          ),
         }}
       />
     </Tabs>
@@ -114,13 +135,7 @@ const styles = StyleSheet.create({
     marginBottom: -10,
   },
   iconContainerFocused: {
-    backgroundColor: '#6200ee',
+    backgroundColor: '#31256C',
     transform: [{ translateY: -10 }],
-  },
-  iconLabel: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 5,
   },
 });
