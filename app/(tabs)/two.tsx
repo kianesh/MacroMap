@@ -4,9 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyCKtCGcYIWy2tGlvN8E2MADnEj1bxJ3Hp8';
-const NUTRITIONIX_API_KEY = 'fd960d561e6cbf69af473581dcf31b1f';
-const NUTRITIONIX_APP_ID = '2669dd01';
+const GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_API_KEY';
+const NUTRITIONIX_API_KEY = 'YOUR_API_KEY';
+const NUTRITIONIX_APP_ID = 'YOUR_APP_ID';
 
 interface LocationCoords {
   latitude: number;
