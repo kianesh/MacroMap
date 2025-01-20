@@ -6,8 +6,8 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const NUTRITIONIX_API_URL = 'https://trackapi.nutritionix.com/v2/search/instant';
-const NUTRITIONIX_APP_ID = '2669dd01';
-const NUTRITIONIX_API_KEY = 'fd960d561e6cbf69af473581dcf31b1f';
+const NUTRITIONIX_APP_ID = 'YOUR_APP_ID';
+const NUTRITIONIX_API_KEY = 'YOUR_API_KEY';
 
 interface NutritionInfo {
   food_name: string;
