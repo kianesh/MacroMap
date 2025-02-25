@@ -3,6 +3,10 @@ import * as Location from 'expo-location';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync();
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCKtCGcYIWy2tGlvN8E2MADnEj1bxJ3Hp8';
 const NUTRITIONIX_API_KEY = 'fd960d561e6cbf69af473581dcf31b1f';
@@ -42,8 +46,15 @@ export default function MapScreen() {
   const [query, setQuery] = useState<string>('');
   const [popupData, setPopupData] = useState<NutritionInfo[]>([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
+  const [loaded, error] = useFonts({
+    'AfacadFlux': require('../../assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf'),
+  });
 
   useEffect(() => {
+    if (loaded || error) {
+      SplashScreen.hideAsync();
+    }
+
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -54,7 +65,7 @@ export default function MapScreen() {
       let location = await Location.getCurrentPositionAsync({});
       setLocation(location.coords);
     })();
-  }, []);
+  }, [loaded, error]);
 
   const fetchNearbyRestaurants = async (query: string) => {
     if (!location) return;
@@ -120,6 +131,10 @@ export default function MapScreen() {
     </View>
   );
 
+  if (!loaded) {
+    return null; // or a loading spinner
+  }
+
   return (
     <View style={styles.container}>
       <TextInput
@@ -164,6 +179,7 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    fontFamily: 'AfacadFlux',
   },
   map: {
     width: Dimensions.get('window').width,
@@ -178,6 +194,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 5,
     padding: 10,
+    fontFamily: 'AfacadFlux',
   },
   searchButton: {
     position: 'absolute',
@@ -189,10 +206,12 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     padding: 10,
     alignItems: 'center',
+    fontFamily: 'AfacadFlux',
   },
   searchButtonText: {
     color: 'white',
     fontWeight: 'bold',
+    fontFamily: 'AfacadFlux',
   },
   popup: {
     position: 'absolute',
@@ -204,6 +223,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     zIndex: 1,
+    fontFamily: 'AfacadFlux',
   },
   menuItem: {
     marginBottom: 10,
@@ -211,15 +231,18 @@ const styles = StyleSheet.create({
   menuText: {
     fontSize: 14,
     marginBottom: 5,
+    fontFamily: 'AfacadFlux',
   },
   addButton: {
     backgroundColor: '#31256C',
     borderRadius: 5,
     padding: 5,
     alignItems: 'center',
+    fontFamily: 'AfacadFlux',
   },
   addButtonText: {
     color: 'white',
     fontWeight: 'bold',
+    fontFamily: 'AfacadFlux',
   },
 });

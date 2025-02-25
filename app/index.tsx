@@ -1,14 +1,25 @@
 import { Link, router } from 'expo-router';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, Image } from 'react-native';
 import { auth } from '../FirebaseConfig';
+
+SplashScreen.preventAutoHideAsync();
 
 const index = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loaded, error] = useFonts({
+    'AfacadFlux': require('../assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf'),
+  });
 
   useEffect(() => {
+    if (loaded || error) {
+      SplashScreen.hideAsync();
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         router.replace('/(tabs)');
@@ -30,7 +41,7 @@ const index = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Login</Text>
+      <Image source={require('../assets/images/MacroMap-03.png')} style={styles.logo} />
       <TextInput style={styles.textInput} placeholder="email" value={email} onChangeText={setEmail} />
       <TextInput style={styles.textInput} placeholder="password" value={password} onChangeText={setPassword} secureTextEntry />
       <TouchableOpacity style={styles.button} onPress={signIn}>
@@ -57,13 +68,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    fontFamily: 'AfacadFlux',
     backgroundColor: '#FAFAFA', // A softer white for a modern, minimalist background
+  },
+  logo: {
+    width: '30%',
+    height: '30%'
   },
   title: {
     fontSize: 28, // A bit larger for a more striking appearance
     fontWeight: '800', // Extra bold for emphasis
     marginBottom: 40, // Increased space for a more airy, open feel
     color: '#1A237E', // A deep indigo for a sophisticated, modern look
+    fontFamily: 'AfacadFlux',
   },
   textInput: {
     height: 50, // Standard height for elegance and simplicity
@@ -81,6 +98,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 4, // Slightly elevated for a subtle 3D effect
+    fontFamily: 'AfacadFlux',
   },
   button: {
     width: '90%',
@@ -91,15 +109,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 5,
+    fontFamily: 'AfacadFlux',
   },
   text: {
     color: '#FFFFFF', // Maintained white for clear visibility
     fontSize: 18, // Slightly larger for emphasis
     fontWeight: '600', // Semi-bold for a balanced weight
+    fontFamily: 'AfacadFlux',
   },
   linkText: {
     color: '#31256C', // Deep indigo for a link-like appearance
     fontSize: 16,
     marginTop: 20,
+    fontFamily: 'AfacadFlux',
   },
 });

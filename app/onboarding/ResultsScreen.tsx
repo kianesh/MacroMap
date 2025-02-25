@@ -8,6 +8,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ResultsScreen() {
   const router = useRouter();
+  const [calories, setCalories] = useState(0);
   const [protein, setProtein] = useState(0);
   const [fats, setFats] = useState(0);
   const [carbs, setCarbs] = useState(0);
@@ -38,7 +39,7 @@ export default function ResultsScreen() {
     activityLevel: string,
     goal: string
   ) => {
-    // Example calculation logic
+    // Calculate BMR
     let bmr;
     if (gender === 'male') {
       bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
@@ -88,16 +89,17 @@ export default function ResultsScreen() {
     setProtein(proteinIntake);
     setFats(fatsIntake);
     setCarbs(carbsIntake);
+    setCalories(calorieGoal);
 
-    // Save PFC to Firebase
-    savePFCToFirebase(proteinIntake, fatsIntake, carbsIntake);
+    // Save PFC and BMR to Firebase
+    savePFCToFirebase(proteinIntake, fatsIntake, carbsIntake, calorieGoal);
   };
 
-  const savePFCToFirebase = async (protein: number, fats: number, carbs: number) => {
+  const savePFCToFirebase = async (protein: number, fats: number, carbs: number, calorieGoal: number) => {
     const user = auth.currentUser;
     if (user) {
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, { protein, fats, carbs }, { merge: true });
+      await setDoc(userRef, { protein, fats, carbs, calorieGoal }, { merge: true });
     }
   };
 
@@ -112,6 +114,7 @@ export default function ResultsScreen() {
         <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>
       <Text style={styles.title}>You're All Set!</Text>
+      <Text style={styles.recommendation}>Calories: {calories.toFixed(2)}kcal</Text>
       <Text style={styles.recommendation}>Protein: {protein.toFixed(2)}g</Text>
       <Text style={styles.recommendation}>Fats: {fats.toFixed(2)}g</Text>
       <Text style={styles.recommendation}>Carbs: {carbs.toFixed(2)}g</Text>
