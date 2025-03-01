@@ -4,7 +4,7 @@ import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, getDocs, limit, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -27,7 +27,7 @@ interface NutritionInfo {
 }
 
 export default function MealSearchScreen() {
-  const [query, setQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [results, setResults] = useState<NutritionInfo[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const router = useRouter();
@@ -67,17 +67,45 @@ export default function MealSearchScreen() {
   };
 
   const searchFoods = async () => {
-    if (!query.trim()) {
+    if (!searchQuery.trim()) {
       alert('Please enter a search term');
       return;
     }
 
     setIsLoading(true);
     try {
+      // First, search in Firestore
+      const foodsRef = collection(db, 'foods');
+      const q = query(
+        foodsRef,
+        where('name', '>=', searchQuery.toLowerCase()),
+        where('name', '<=', searchQuery.toLowerCase() + '\uf8ff'),
+        limit(50)
+      );
+
+      const snapshot = await getDocs(q);
+      const cachedResults = snapshot.docs.map(doc => ({
+        food_name: (doc.data() as any).name,
+        brand_name: (doc.data() as any).brand_name,
+        serving_qty: (doc.data() as any).serving_qty,
+        serving_unit: (doc.data() as any).serving_unit,
+        nf_calories: (doc.data() as any).calories,
+        nf_protein: (doc.data() as any).protein,
+        nf_total_fat: (doc.data() as any).fats,
+        nf_total_carbohydrate: (doc.data() as any).carbs,
+        image_url: (doc.data() as any).image_url,
+      }));
+
+      if (cachedResults.length > 0) {
+        setResults(cachedResults);
+        return;
+      }
+
+      // If no cached results, fall back to API
       const method = 'GET';
       const params = {
         method: 'foods.search',
-        search_expression: query,
+        search_expression: searchQuery,
         format: 'json',
         max_results: 50,
         page_number: 0
@@ -188,8 +216,8 @@ export default function MealSearchScreen() {
       <TextInput
         style={styles.searchInput}
         placeholder="Search for meals"
-        value={query}
-        onChangeText={setQuery}
+        value={searchQuery}
+        onChangeText={setSearchQuery}
       />
       <TouchableOpacity 
         style={[styles.searchButton, isLoading && styles.disabledButton]} 
