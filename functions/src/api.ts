@@ -1,4 +1,3 @@
-// api.ts (pls deploy)
 import axios from "axios";
 import * as crypto from "crypto-js";
 import {FieldValue, getFirestore} from "firebase-admin/firestore";
@@ -30,45 +29,6 @@ interface FoodItem {
   timestamp: FirebaseFirestore.FieldValue;
 }
 
-// FatSecret OAuth Helper
-const generateFatSecretSignature = (
-  method: string,
-  params: Record<string, string | number>
-) => {
-  const oauthParams: Record<string, string> = {
-    oauth_consumer_key: FATSECRET_CONFIG.key,
-    oauth_nonce: Math.random().toString(36).substring(2),
-    oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-    oauth_version: "1.0",
-  };
-
-  const allParams: Record<string, string> = {
-    ...Object.entries(params).reduce((acc, [key, value]) => ({
-      ...acc,
-      [key]: String(value),
-    }), {}),
-    ...oauthParams,
-  };
-
-  const paramString = Object.keys(allParams)
-    .sort()
-    .map((key) =>
-      `${encodeURIComponent(key)}=${encodeURIComponent(allParams[key])}`
-    )
-    .join("&");
-
-  const baseString = [
-    method.toUpperCase(),
-    encodeURIComponent(FATSECRET_CONFIG.url),
-    encodeURIComponent(paramString),
-  ].join("&");
-
-  const signingKey = `${encodeURIComponent(FATSECRET_CONFIG.secret)}&`;
-  // eslint-disable-next-line new-cap
-  return crypto.HmacSHA1(baseString, signingKey).toString(crypto.enc.Base64);
-};
-
 // Nutritionix API Helper
 const fetchNutritionixData = async () => {
   const response = await axios.get(NUTRITIONIX_CONFIG.url, {
@@ -97,45 +57,81 @@ const fetchNutritionixData = async () => {
 
 // FatSecret API Helper
 const fetchFatSecretData = async () => {
-  const params = {
-    method: "foods.get.v4",
-    search_expression: "popular",
+  const methodParams = {
+    method: "foods.search",
+    search_expression: "chicken",
     format: "json",
-    max_results: 50,
+    max_results: "10",
   };
 
-  const signature = generateFatSecretSignature("GET", params);
+  const oauthParams = {
+    oauth_consumer_key: FATSECRET_CONFIG.key,
+    oauth_nonce: Math.random().toString(36).substring(2),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_version: "1.0",
+  };
 
-  const response = await axios.get(FATSECRET_CONFIG.url, {
-    params: {
-      ...params,
-      oauth_signature: signature,
-    },
-  });
+  const allParams: Record<string, string> = {
+    ...methodParams,
+    ...oauthParams,
+  };
 
-  // Log the response to understand its structure
-  console.log("FatSecret API Response:", response.data);
+  // Signature generation
+  const baseString = [
+    "POST",
+    encodeURIComponent(FATSECRET_CONFIG.url),
+    encodeURIComponent(
+      Object.keys(allParams)
+        .sort()
+        .map((key) => `${encodeURIComponent(key)}=${
+          encodeURIComponent(allParams[key])}`)
+        .join("&")
+    ),
+  ].join("&");
 
-  // Safely access the food array
+  const signingKey = `${encodeURIComponent(FATSECRET_CONFIG.secret)}&`;
+  // eslint-disable-next-line new-cap
+  const signature = crypto.HmacSHA1(baseString, signingKey)
+    .toString(crypto.enc.Base64);
+
+  const finalParams = {...allParams, oauth_signature: signature};
+
+  const response = await axios.post(
+    FATSECRET_CONFIG.url,
+    null,
+    {
+      params: finalParams,
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    }
+  );
+
   const foods = response.data.foods?.food;
-  if (!foods) {
-    throw new Error("No food data found in the response");
-  }
+  if (!foods) throw new Error("No food data found");
 
-  const foodArray = Array.isArray(foods) ? foods : [foods];
+  return (Array.isArray(foods) ? foods : [foods])
+    .map((item: Record<string, any>) => {
+      const nutrition = item.food_description.match(
+        // eslint-disable-next-line max-len
+        /Calories: (\d+)kcal \| Fat: ([\d.]+)g \| Carbs: ([\d.]+)g \| Protein: ([\d.]+)g/
+      ) || [];
 
-  return foodArray.map((item: Record<string, any>) => ({
-    name: item.food_name,
-    brand: item.brand_name,
-    calories: item.calories,
-    protein: item.protein,
-    carbs: item.carbohydrate,
-    fats: item.fat,
-    source: "FatSecret",
-  }));
+      return {
+        name: item.food_name,
+        brand: item.brand_name || (item.food_type === "Brand" ?
+          item.food_type : "Generic"),
+        calories: parseFloat(nutrition[1]) || 0,
+        protein: parseFloat(nutrition[4]) || 0,
+        carbs: parseFloat(nutrition[3]) || 0,
+        fats: parseFloat(nutrition[2]) || 0,
+        servingSize: "100g",
+        source: "FatSecret",
+      };
+    })
+    .filter((item) => item.calories > 0);
 };
 
-// Main Scheduled Function
+// Main Function
 export const updateFoodsDatabase = onRequest(async (req, res) => {
   const db = getFirestore();
   const batch = db.batch();
@@ -156,15 +152,13 @@ export const updateFoodsDatabase = onRequest(async (req, res) => {
     }));
 
     allFoods.forEach((food) => {
-      const ref = foodsCollection.doc();
-      batch.set(ref, food);
+      batch.set(foodsCollection.doc(), food);
     });
 
     await batch.commit();
-    console.log(`Successfully added ${allFoods.length} food items`);
-    res.status(200).send(`Successfully added ${allFoods.length} food items`);
+    res.status(200).send(`Added ${allFoods.length} items`);
   } catch (error) {
-    console.error("Failed to update food database:", error);
-    res.status(500).send("Failed to update food database");
+    console.error("Update failed:", error);
+    res.status(500).send("Update failed");
   }
 });
