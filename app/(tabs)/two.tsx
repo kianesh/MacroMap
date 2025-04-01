@@ -9,12 +9,15 @@ import React, { useEffect, useState } from 'react';
 import { Dimensions, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
-SplashScreen.preventAutoHideAsync();
+import {
+  FATSECRET_CLIENT_KEY,
+  FATSECRET_CLIENT_SECRET,
+  GOOGLE_MAPS_API_KEY,
+} from '@env';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyCKtCGcYIWy2tGlvN8E2MADnEj1bxJ3Hp8';
-const FATSECRET_CLIENT_KEY = '2e3df77a4d7a4481a05a9d79152e64ad';
-const FATSECRET_CLIENT_SECRET = '8591547e4ea24556a46a8005398fb5ba';
 const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
+
+SplashScreen.preventAutoHideAsync();
 
 interface LocationCoords {
   latitude: number;

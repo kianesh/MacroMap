@@ -20,7 +20,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.anonymous.macromap1"
     },
     "web": {
       "bundler": "metro",
@@ -29,9 +30,12 @@
     },
     "plugins": [
       "expo-router",
-      ["expo-font", 
+      [
+        "expo-font",
         {
-          "fonts": ["./assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf"]
+          "fonts": [
+            "./assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf"
+          ]
         }
       ]
     ],

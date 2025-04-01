@@ -223,7 +223,7 @@ export default function ReportsScreen() {
             height={220}
             chartConfig={{
               ...chartConfig,
-              formatYLabel: (value) => `${Math.round(value)}%`,
+              formatYLabel: (value) => `${Math.round(Number(value))}%`,
             }}
             bezier
             style={styles.chart}

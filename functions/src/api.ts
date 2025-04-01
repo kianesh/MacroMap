@@ -1,18 +1,20 @@
 import axios from "axios";
 import * as crypto from "crypto-js";
-import {FieldValue, getFirestore} from "firebase-admin/firestore";
-import {onRequest} from "firebase-functions/v2/https";
+import * as dotenv from "dotenv";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { onRequest } from "firebase-functions/v2/https";
+dotenv.config();
 
 // Configuration
 const FATSECRET_CONFIG = {
-  key: "2e3df77a4d7a4481a05a9d79152e64ad",
-  secret: "8591547e4ea24556a46a8005398fb5ba",
+  key: process.env.FATSECRET_CLIENT_KEY || "",
+  secret: process.env.FATSECRET_CLIENT_SECRET || "",
   url: "https://platform.fatsecret.com/rest/server.api",
 };
 
 const NUTRITIONIX_CONFIG = {
-  appId: "2669dd01",
-  apiKey: "1eca61bb2a7f7d680862d6fd3355fc52",
+  appId: process.env.NUTRITIONIX_APP_ID || "",
+  apiKey: process.env.NUTRITIONIX_API_KEY || "",
   url: "https://trackapi.nutritionix.com/v2/search/instant",
 };
 
@@ -59,9 +61,9 @@ const fetchNutritionixData = async () => {
 const fetchFatSecretData = async () => {
   const methodParams = {
     method: "foods.search",
-    search_expression: "chicken",
+    search_expression: "popular",
     format: "json",
-    max_results: "10",
+    max_results: "1000",
   };
 
   const oauthParams = {
@@ -113,7 +115,7 @@ const fetchFatSecretData = async () => {
     .map((item: Record<string, any>) => {
       const nutrition = item.food_description.match(
         // eslint-disable-next-line max-len
-        /Calories: (\d+)kcal \| Fat: ([\d.]+)g \| Carbs: ([\d.]+)g \| Protein: ([\d.]+)g/
+        /Calories:\s*([\d.]+)\s*kcal.*Fat:\s*([\d.]+)g.*Carbs:\s*([\d.]+)g.*Protein:\s*([\d.]+)g/i
       ) || [];
 
       return {
