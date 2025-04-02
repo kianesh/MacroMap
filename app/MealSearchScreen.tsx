@@ -1,17 +1,15 @@
 import { auth, db } from '@/FirebaseConfig';
-import {
-  FATSECRET_CLIENT_KEY,
-  FATSECRET_CLIENT_SECRET,
-} from '@env';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { addDoc, collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { addDoc, collection } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
+const FATSECRET_CLIENT_KEY = '2e3df77a4d7a4481a05a9d79152e64ad';
+const FATSECRET_CLIENT_SECRET = '8591547e4ea24556a46a8005398fb5ba';
 const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
 
 SplashScreen.preventAutoHideAsync();
@@ -29,7 +27,7 @@ interface NutritionInfo {
 }
 
 export default function MealSearchScreen() {
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [query, setQuery] = useState<string>('');
   const [results, setResults] = useState<NutritionInfo[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const router = useRouter();
@@ -69,44 +67,48 @@ export default function MealSearchScreen() {
   };
 
   const searchFoods = async () => {
-    if (!searchQuery.trim()) {
+    if (!query.trim()) {
       alert('Please enter a search term');
       return;
     }
 
     setIsLoading(true);
     try {
-      // Step 1: Check Firestore for cached food IDs
-      const foodsRef = collection(db, 'foods');
-      const q = query(
-        foodsRef,
-        where('name', '>=', searchQuery.toLowerCase()),
-        where('name', '<=', searchQuery.toLowerCase() + '\uf8ff'),
-        limit(50) // im gonna write a
-      );
+      const method = 'GET';
+      const params = {
+        method: 'foods.search',
+        search_expression: query,
+        format: 'json',
+        max_results: 50,
+        page_number: 0
+      };
 
-      const snapshot = await getDocs(q);
-      const cachedResults = snapshot.docs.map(doc => ({
-        food_id: doc.data().food_id,
-        timestamp: doc.data().timestamp.toDate(),
-      }));
+      const oauthHeaders = generateOAuthSignature(method, FATSECRET_API_URL, params);
 
-      // Filter out expired cache entries (older than 24 hours)
-      const validCache = cachedResults.filter(
-        item => Date.now() - item.timestamp.getTime() < 24 * 60 * 60 * 1000
-      );
+      const response = await axios.get(FATSECRET_API_URL, {
+        params: {
+          ...params,
+          ...oauthHeaders
+        }
+      });
 
-      if (validCache.length > 0) {
-        // Step 2: Fetch fresh details for cached food IDs
+      console.log('API Response:', response.data);
+
+      if (response.data.foods?.food) {
+        const foods = Array.isArray(response.data.foods.food) 
+          ? response.data.foods.food 
+          : [response.data.foods.food];
+
         const foodDetails = await Promise.all(
-          validCache.map(async (item) => {
+          foods.map(async (food: any) => {
             const detailParams = {
               method: 'food.get.v4',
-              food_id: item.food_id,
+              food_id: food.food_id,
               format: 'json',
+              include_food_images: true,
             };
 
-            const detailHeaders = generateOAuthSignature('GET', FATSECRET_API_URL, detailParams);
+            const detailHeaders = generateOAuthSignature(method, FATSECRET_API_URL, detailParams);
             const detailResponse = await axios.get(FATSECRET_API_URL, {
               params: {
                 ...detailParams,
@@ -114,108 +116,44 @@ export default function MealSearchScreen() {
               }
             });
 
-            const food = detailResponse.data.food;
-            const servings = food.servings.serving;
-            const firstServing = Array.isArray(servings) ? servings[0] : servings;
+            console.log('Detail Response:', detailResponse.data);
+
+            const foodDetail = detailResponse.data.food;
+            const primaryServing = Array.isArray(foodDetail.servings.serving) 
+              ? foodDetail.servings.serving[0] 
+              : foodDetail.servings.serving;
+
+            // Updated image URL handling
+            const imageUrl = foodDetail.images?.image?.[0]?.image_url || 
+                            foodDetail.food_images?.food_image?.[0]?.image_url || 
+                            null;
 
             return {
-              food_name: food.food_name || 'Unnamed Food',
-              brand_name: food.brand_name || '',
-              serving_qty: Number(firstServing.number_of_units) || 1,
-              serving_unit: firstServing.measurement_description || 'serving',
-              nf_calories: Number(firstServing.calories) || 0,
-              nf_protein: Number(firstServing.protein) || 0,
-              nf_total_fat: Number(firstServing.fat) || 0,
-              nf_total_carbohydrate: Number(firstServing.carbohydrate) || 0,
-              image_url: food.food_images?.food_image?.[0]?.image_url || null,
+              food_name: foodDetail.food_name || 'Unknown Food',
+              brand_name: foodDetail.brand_name || '',
+              serving_qty: parseFloat(primaryServing.number_of_units) || 1,
+              serving_unit: primaryServing.measurement_description || 'serving',
+              nf_calories: parseFloat(primaryServing.calories) || 0,
+              nf_protein: parseFloat(primaryServing.protein) || 0,
+              nf_total_fat: parseFloat(primaryServing.fat) || 0,
+              nf_total_carbohydrate: parseFloat(primaryServing.carbohydrate) || 0,
+              image_url: imageUrl,
             };
           })
         );
 
         setResults(foodDetails);
-        return;
-      }
-
-      // Step 3: If no valid cache, perform a fresh search
-      const searchParams = {
-        method: 'foods.search.v4',
-        search_expression: searchQuery,
-        format: 'json',
-        max_results: '50',
-      };
-
-      const searchHeaders = generateOAuthSignature('GET', FATSECRET_API_URL, searchParams);
-      const searchResponse = await axios.get(FATSECRET_API_URL, {
-        params: {
-          ...searchParams,
-          ...searchHeaders
-        }
-      });
-
-      const foods = searchResponse.data?.foods?.food || [];
-      const foodIds = Array.isArray(foods)
-        ? foods.map(item => item.food_id)
-        : [foods.food_id];
-
-      // Step 4: Cache new food IDs 
-      await Promise.all(
-        foodIds.map(async (foodId) => {
-          await addDoc(collection(db, 'foods'), {
-            food_id: foodId,
-            name: searchQuery.toLowerCase(),
-            timestamp: new Date(),
-          });
-        })
-      );
-
-      // Step 5: Fetch details for new food IDs
-      const foodDetails = await Promise.all(
-        foodIds.map(async (foodId) => {
-          const detailParams = {
-            method: 'food.get.v4',
-            food_id: foodId,
-            format: 'json',
-          };
-
-          const detailHeaders = generateOAuthSignature('GET', FATSECRET_API_URL, detailParams);
-          const detailResponse = await axios.get(FATSECRET_API_URL, {
-            params: {
-              ...detailParams,
-              ...detailHeaders
-            }
-          });
-
-          const food = detailResponse.data.food;
-          const servings = food.servings.serving;
-          const firstServing = Array.isArray(servings) ? servings[0] : servings;
-
-          return {
-            food_name: food.food_name || 'Unnamed Food',
-            brand_name: food.brand_name || '',
-            serving_qty: Number(firstServing.number_of_units) || 1,
-            serving_unit: firstServing.measurement_description || 'serving',
-            nf_calories: Number(firstServing.calories) || 0,
-            nf_protein: Number(firstServing.protein) || 0,
-            nf_total_fat: Number(firstServing.fat) || 0,
-            nf_total_carbohydrate: Number(firstServing.carbohydrate) || 0,
-            image_url: food.food_images?.food_image?.[0]?.image_url || null,
-          };
-        })
-      );
-
-      setResults(foodDetails);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        console.error('Error searching foods:', error.response?.data || error.message);
       } else {
-        console.error('Error searching foods:', error);
+        setResults([]);
       }
+    } catch (error) {
+      console.error('Error searching foods:', error);
       alert('Failed to search for foods. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
-
+  
   const logMeal = async (meal: NutritionInfo) => {
     const user = auth.currentUser;
     if (!user) {
@@ -250,11 +188,11 @@ export default function MealSearchScreen() {
       <TextInput
         style={styles.searchInput}
         placeholder="Search for meals"
-        value={searchQuery}
-        onChangeText={setSearchQuery}
+        value={query}
+        onChangeText={setQuery}
       />
-      <TouchableOpacity
-        style={[styles.searchButton, isLoading && styles.disabledButton]}
+      <TouchableOpacity 
+        style={[styles.searchButton, isLoading && styles.disabledButton]} 
         onPress={searchFoods}
         disabled={isLoading}
       >
@@ -262,14 +200,14 @@ export default function MealSearchScreen() {
           {isLoading ? 'Searching...' : 'Search'}
         </Text>
       </TouchableOpacity>
-
+      
       <ScrollView>
         {results.length > 0 ? (
           results.map((result, index) => (
             <View key={index} style={styles.resultItem}>
               {result.image_url ? (
-                <Image
-                  source={{ uri: result.image_url }}
+                <Image 
+                  source={{ uri: result.image_url }} 
                   style={styles.foodImage}
                   resizeMode="cover"
                   onError={() => console.log('Error loading image')}
@@ -292,21 +230,21 @@ export default function MealSearchScreen() {
                   Protein: {result.nf_protein}g • Fat: {result.nf_total_fat}g • Carbs: {result.nf_total_carbohydrate}g
                 </Text>
                 <View style={styles.buttonRow}>
-                  <TouchableOpacity
-                    style={styles.logButton}
+                  <TouchableOpacity 
+                    style={styles.logButton} 
                     onPress={() => logMeal(result)}
                   >
                     <Text style={styles.logButtonText}>Add</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.linkButton, !result.brand_name && styles.disabledButton]}
+                  <TouchableOpacity 
+                    style={[styles.linkButton, !result.brand_name && styles.disabledButton]} 
                     onPress={() => result.brand_name && openLink(`https://www.ubereats.com/search?q=${result.brand_name}`)}
                     disabled={!result.brand_name}
                   >
                     <Text style={styles.linkButtonText}>Uber Eats</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.linkButton, !result.brand_name && styles.disabledButton]}
+                  <TouchableOpacity 
+                    style={[styles.linkButton, !result.brand_name && styles.disabledButton]} 
                     onPress={() => result.brand_name && openLink(`https://www.doordash.com/search/store/${result.brand_name}`)}
                     disabled={!result.brand_name}
                   >

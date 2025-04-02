@@ -4,7 +4,7 @@ import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
 import * as Location from 'expo-location';
 import * as SplashScreen from 'expo-splash-screen';
-import { addDoc, collection, query as firestoreQuery, getDocs, limit, where } from 'firebase/firestore';
+import { addDoc, collection } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
@@ -120,41 +120,13 @@ export default function MapScreen() {
 
     setIsLoading(true);
     try {
-      // First, search in Firestore
-      const foodsRef = collection(db, 'foods');
-      const q = firestoreQuery(
-        foodsRef,
-        where('name', '>=', restaurantName.toLowerCase()),
-        where('name', '<=', restaurantName.toLowerCase() + '\uf8ff'),
-        limit(50)
-      );
-
-      const snapshot = await getDocs(q);
-      const cachedResults = snapshot.docs.map(doc => ({
-        food_name: (doc.data() as any).name,
-        brand_name: (doc.data() as any).brand_name,
-        serving_qty: (doc.data() as any).serving_qty || 1,
-        serving_unit: (doc.data() as any).serving_unit || 'serving',
-        nf_calories: (doc.data() as any).calories,
-        nf_protein: (doc.data() as any).protein,
-        nf_total_fat: (doc.data() as any).fats,
-        nf_total_carbohydrate: (doc.data() as any).carbs,
-        image_url: (doc.data() as any).image,
-      }));
-
-      if (cachedResults.length > 0) {
-        setFoodResults(cachedResults);
-        return;
-      }
-
-      // If no cached results, fall back to API
       const method = 'GET';
       const params = {
         method: 'foods.search',
         search_expression: restaurantName,
         format: 'json',
         max_results: 50,
-        page_number: 0
+        page_number: 0,
       };
 
       const oauthHeaders = generateOAuthSignature(method, FATSECRET_API_URL, params);
@@ -162,64 +134,26 @@ export default function MapScreen() {
       const response = await axios.get(FATSECRET_API_URL, {
         params: {
           ...params,
-          ...oauthHeaders
-        }
+          ...oauthHeaders,
+        },
       });
 
-      console.log('API Response:', response.data);
+      const foods = response.data.foods?.food || [];
+      const foodDetails = Array.isArray(foods)
+        ? foods.map((food: any) => ({
+            food_name: food.food_name || 'Unknown Food',
+            brand_name: food.brand_name || '',
+            serving_qty: parseFloat(food.serving_qty) || 1,
+            serving_unit: food.serving_unit || 'serving',
+            nf_calories: parseFloat(food.nf_calories) || 0,
+            nf_protein: parseFloat(food.nf_protein) || 0,
+            nf_total_fat: parseFloat(food.nf_total_fat) || 0,
+            nf_total_carbohydrate: parseFloat(food.nf_total_carbohydrate) || 0,
+            image_url: food.food_images?.food_image?.[0]?.image_url || null,
+          }))
+        : [];
 
-      if (response.data.foods?.food) {
-        const foods = Array.isArray(response.data.foods.food) 
-          ? response.data.foods.food 
-          : [response.data.foods.food];
-
-        const foodDetails = await Promise.all(
-          foods.map(async (food: any) => {
-            const detailParams = {
-              method: 'food.get.v4',
-              food_id: food.food_id,
-              format: 'json',
-              include_food_images: true,
-            };
-
-            const detailHeaders = generateOAuthSignature(method, FATSECRET_API_URL, detailParams);
-            const detailResponse = await axios.get(FATSECRET_API_URL, {
-              params: {
-                ...detailParams,
-                ...detailHeaders
-              }
-            });
-
-            console.log('Detail Response:', detailResponse.data);
-
-            const foodDetail = detailResponse.data.food;
-            const primaryServing = Array.isArray(foodDetail.servings.serving) 
-              ? foodDetail.servings.serving[0] 
-              : foodDetail.servings.serving;
-
-            // Updated image URL handling
-            const imageUrl = foodDetail.images?.image?.[0]?.image_url || 
-                            foodDetail.food_images?.food_image?.[0]?.image_url || 
-                            null;
-
-            return {
-              food_name: foodDetail.food_name || 'Unknown Food',
-              brand_name: foodDetail.brand_name || '',
-              serving_qty: parseFloat(primaryServing.number_of_units) || 1,
-              serving_unit: primaryServing.measurement_description || 'serving',
-              nf_calories: parseFloat(primaryServing.calories) || 0,
-              nf_protein: parseFloat(primaryServing.protein) || 0,
-              nf_total_fat: parseFloat(primaryServing.fat) || 0,
-              nf_total_carbohydrate: parseFloat(primaryServing.carbohydrate) || 0,
-              image_url: imageUrl,
-            };
-          })
-        );
-
-        setFoodResults(foodDetails);
-      } else {
-        setFoodResults([]);
-      }
+      setFoodResults(foodDetails);
     } catch (error) {
       console.error('Error searching foods:', error);
       alert('Failed to search for foods. Please try again.');

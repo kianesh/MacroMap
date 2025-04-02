@@ -24,6 +24,9 @@ const firebaseConfig = {
   measurementId: FIREBASE_MEASUREMENT_ID
 };
 
+// Log the API key to verify it's being loaded correctly
+console.log("Firebase API Key:", FIREBASE_API_KEY);
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = initializeAuth(app, {

@@ -8,7 +8,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 export default function GenderScreen() {
   const router = useRouter();
 
-  const saveGender = async (gender) => {
+  const saveGender = async (gender: string) => {
     if (auth.currentUser) {
       const userRef = doc(db, 'users', auth.currentUser.uid);
       await setDoc(userRef, { gender }, { merge: true });

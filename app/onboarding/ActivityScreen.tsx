@@ -8,7 +8,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 export default function ActivityScreen() {
   const router = useRouter();
 
-  const saveActivityLevel = async (activityLevel) => {
+  const saveActivityLevel = async (activityLevel: string) => {
     if (auth.currentUser) {
       const userRef = doc(db, 'users', auth.currentUser.uid);
       await setDoc(userRef, { activityLevel }, { merge: true });
