@@ -1,4 +1,3 @@
-import { auth, db } from '@/FirebaseConfig';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
@@ -6,14 +5,23 @@ import * as Location from 'expo-location';
 import * as SplashScreen from 'expo-splash-screen';
 import { addDoc, collection } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import { Dimensions, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../../FirebaseConfig';
+// Conditionally import MapView
+let MapView: any = null;
+let Marker: any = null;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+}
+
 
 import {
   FATSECRET_CLIENT_KEY,
   FATSECRET_CLIENT_SECRET,
   GOOGLE_MAPS_API_KEY,
-} from '@env';
+} from 'react-native-dotenv';
 
 const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
 

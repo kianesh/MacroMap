@@ -1,10 +1,10 @@
-import { auth, db } from '@/FirebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../FirebaseConfig';
 
 export default function ResultsScreen() {
   const router = useRouter();

@@ -1,4 +1,4 @@
-import { auth, db } from '@/FirebaseConfig';
+import { FontAwesome } from '@expo/vector-icons';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { addDoc, collection } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../FirebaseConfig';
 
 const FATSECRET_CLIENT_KEY = '2e3df77a4d7a4481a05a9d79152e64ad';
 const FATSECRET_CLIENT_SECRET = '8591547e4ea24556a46a8005398fb5ba';
@@ -204,7 +205,11 @@ export default function MealSearchScreen() {
       <ScrollView>
         {results.length > 0 ? (
           results.map((result, index) => (
-            <View key={index} style={styles.resultItem}>
+            <TouchableOpacity 
+              key={index} 
+              style={styles.resultItem}
+              onPress={() => router.push(`/AdjustServingScreen?meal=${JSON.stringify(result)}`)}
+            >
               {result.image_url ? (
                 <Image 
                   source={{ uri: result.image_url }} 
@@ -229,30 +234,11 @@ export default function MealSearchScreen() {
                 <Text style={styles.resultMacros}>
                   Protein: {result.nf_protein}g • Fat: {result.nf_total_fat}g • Carbs: {result.nf_total_carbohydrate}g
                 </Text>
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity 
-                    style={styles.logButton} 
-                    onPress={() => logMeal(result)}
-                  >
-                    <Text style={styles.logButtonText}>Add</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.linkButton, !result.brand_name && styles.disabledButton]} 
-                    onPress={() => result.brand_name && openLink(`https://www.ubereats.com/search?q=${result.brand_name}`)}
-                    disabled={!result.brand_name}
-                  >
-                    <Text style={styles.linkButtonText}>Uber Eats</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.linkButton, !result.brand_name && styles.disabledButton]} 
-                    onPress={() => result.brand_name && openLink(`https://www.doordash.com/search/store/${result.brand_name}`)}
-                    disabled={!result.brand_name}
-                  >
-                    <Text style={styles.linkButtonText}>DoorDash</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-            </View>
+              <View style={styles.chevronContainer}>
+                <FontAwesome name="chevron-right" size={20} color="#31256C" />
+              </View>
+            </TouchableOpacity>
           ))
         ) : (
           <Text style={styles.noResultsText}>
@@ -381,5 +367,9 @@ const styles = StyleSheet.create({
   placeholderText: {
     color: '#999',
     fontSize: 12,
+  },
+  chevronContainer: {
+    justifyContent: 'center',
+    paddingLeft: 10,
   },
 });

@@ -1,17 +1,23 @@
 {
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "module": "NodeNext",
+    "strict": true,
+    "module": "ESNext",
+    "target": "ESNext",
+    "jsx": "react",
+    "moduleResolution": "node",
     "esModuleInterop": true,
-    "moduleResolution": "nodenext",
+    "skipLibCheck": true,
+    "lib": ["ESNext"], // Exclude "DOM" and include only "ESNext"
+    "paths": {
+      "@firebase/auth": ["./node_modules/@firebase/auth/dist/index.rn.d.ts"],
+      "@/*": ["./*"]
+    },
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "outDir": "lib",
-    "sourceMap": true,
-    "strict": true,
-    "target": "es2017"
+    "sourceMap": true
   },
   "compileOnSave": true,
-  "include": [
-    "src"
-  ]
+  "include": ["src", "env.d.ts"]
 }

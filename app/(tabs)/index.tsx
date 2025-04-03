@@ -1,4 +1,3 @@
-import { auth, db } from '@/FirebaseConfig';
 import { FontAwesome } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFonts } from 'expo-font';
@@ -8,6 +7,7 @@ import { collection, doc, getDoc, getDocs, query, Timestamp, where } from 'fireb
 import React, { useEffect, useState } from 'react';
 import { Button, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ProgressBar } from 'react-native-paper';
+import { auth, db } from '../../FirebaseConfig';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,13 +20,17 @@ interface UserData {
   profilePictureUrl?: string;
 }
 
+// Update your Meal interface to include these fields
 interface Meal {
   id: string;
   name: string;
+  brand_name?: string;
   protein: number;
   fats: number;
   carbs: number;
   calories: number;
+  serving?: string;
+  image_url?: string;
   timestamp: Timestamp;
 }
 
@@ -53,26 +57,18 @@ export default function DashboardScreen() {
   const fetchDailyMealData = async (date: Date) => {
     try {
       const user = auth.currentUser;
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-      console.log('User authenticated:', user.uid);
+      if (!user) throw new Error('User not authenticated');
 
       // Fetch user data
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) {
-        console.error('User document does not exist in Firestore');
-        throw new Error('User data not found');
-      }
-      const userData = userSnap.data() as UserData;
-      console.log('Fetched user data:', userData);
-      setUserData(userData);
+      if (!userSnap.exists()) throw new Error('User data not found');
+      const fetchedUserData = userSnap.data() as UserData;
+      setUserData(fetchedUserData);
 
-      // Fetch meals
+      // Fetch meals for selected day
       const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
       const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-
       const mealsRef = collection(db, 'meals');
       const q = query(
         mealsRef,
@@ -85,135 +81,197 @@ export default function DashboardScreen() {
         id: doc.id,
         ...doc.data()
       })) as Meal[];
-      console.log('Fetched meals:', mealsData); // Debugging log
       setMeals(mealsData);
 
       // Calculate totals
-      let totalCalories = 0;
-      let totalProtein = 0;
-      let totalCarbs = 0;
-      let totalFats = 0;
-
+      let cal = 0, prot = 0, carbs = 0, fats = 0;
       mealsData.forEach(meal => {
-        totalCalories += meal.calories || 0;
-        totalProtein += meal.protein || 0;
-        totalCarbs += meal.carbs || 0;
-        totalFats += meal.fats || 0;
+        cal += meal.calories || 0;
+        prot += meal.protein || 0;
+        carbs += meal.carbs || 0;
+        fats += meal.fats || 0;
       });
-
-      setTotalCalories(totalCalories);
-      setTotalProtein(totalProtein);
-      setTotalCarbs(totalCarbs);
-      setTotalFats(totalFats);
+      setTotalCalories(cal);
+      setTotalProtein(prot);
+      setTotalCarbs(carbs);
+      setTotalFats(fats);
 
     } catch (error) {
       console.error('Error fetching meal data:', error);
     }
   };
 
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchDailyMealData(selectedDate);
-    }, [selectedDate])
-  );
+  useFocusEffect(React.useCallback(() => {
+    fetchDailyMealData(selectedDate);
+  }, [selectedDate]));
 
   const onDateChange = (event: any, date?: Date) => {
     setShowCalendar(false);
-    if (date) {
-      setSelectedDate(date);
-    }
+    if (date) setSelectedDate(date);
   };
 
-  const safeDivision = (numerator: number, denominator: number) => {
-    return denominator > 0 ? numerator / denominator : 0;
+  const safeDivision = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator : 0;
+
+  const handleEditMeal = (meal: Meal) => {
+    const nutritionInfo = {
+      food_name: meal.name,
+      brand_name: meal.brand_name || '',
+      serving_qty: 1,
+      serving_unit: 'serving',
+      nf_calories: meal.calories,
+      nf_protein: meal.protein,
+      nf_total_fat: meal.fats,
+      nf_total_carbohydrate: meal.carbs,
+      mealId: meal.id,
+      image_url: meal.image_url // Add this line
+    };
+    
+    router.push(`/EditMealScreen?meal=${JSON.stringify(nutritionInfo)}`);
   };
 
   if (!loaded) {
-    return null; // or a loading spinner
+    return null;
   }
 
   return (
     <ScrollView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.userInfo}>
           {userData?.profilePictureUrl ? (
-            <Image 
-              source={{ uri: userData.profilePictureUrl }} 
-              style={styles.profileImage} 
-            />
+            <Image source={{ uri: userData.profilePictureUrl }} style={styles.profileImage} />
           ) : (
             <View style={styles.profileImagePlaceholder} />
           )}
           <View style={styles.userTextInfo}>
-            <Text style={styles.greeting}>
-              {userData ? userData.name : 'Loading...'}
-            </Text>
+            <Text style={styles.greeting}>{userData ? userData.name : 'Loading...'}</Text>
           </View>
-          <TouchableOpacity 
-            onPress={() => setShowCalendar(true)}
-            style={styles.dateButton}
-          >
+          <TouchableOpacity onPress={() => setShowCalendar(true)} style={styles.dateButton}>
             <Text style={styles.date}>{selectedDate.toDateString()}</Text>
             <FontAwesome name="calendar" size={20} color="#31256C" style={styles.calendarIcon} />
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Macros Section */}
       {userData && (
         <View style={styles.macroSection}>
           <Text style={styles.sectionTitle}>Macros</Text>
-          <View style={styles.macroItem}>
+          <View style={styles.macroRow}>
+            <View style={styles.macroColumn}>
+              <Text style={styles.macroLabel}>Protein</Text>
+              <View style={styles.progressBarContainer}>
+                <ProgressBar 
+                  progress={safeDivision(Math.round(totalProtein), Math.round(userData.protein))} 
+                  color="#31256C"
+                  style={styles.progressBarSmall}
+                />
+              </View>
+              <Text style={styles.macroValue}>{Math.round(totalProtein)} / {Math.round(userData.protein)} g</Text>
+            </View>
+            <View style={styles.macroColumn}>
+              <Text style={styles.macroLabel}>Fats</Text>
+              <View style={styles.progressBarContainer}>
+                <ProgressBar 
+                  progress={safeDivision(Math.round(totalFats), Math.round(userData.fats))} 
+                  color="#31256C"
+                  style={styles.progressBarSmall}
+                />
+              </View>
+              <Text style={styles.macroValue}>{Math.round(totalFats)} / {Math.round(userData.fats)} g</Text>
+            </View>
+            <View style={styles.macroColumn}>
+              <Text style={styles.macroLabel}>Carbs</Text>
+              <View style={styles.progressBarContainer}>
+                <ProgressBar 
+                  progress={safeDivision(Math.round(totalCarbs), Math.round(userData.carbs))} 
+                  color="#31256C"
+                  style={styles.progressBarSmall}
+                />
+              </View>
+              <Text style={styles.macroValue}>{Math.round(totalCarbs)} / {Math.round(userData.carbs)} g</Text>
+            </View>
+          </View>
+          <View style={styles.caloriesContainer}>
             <Text style={styles.macroLabel}>Calories</Text>
             <ProgressBar progress={safeDivision(Math.round(totalCalories), Math.round(userData.calorieGoal))} color="#31256C" style={styles.progressBar} />
             <Text style={styles.macroValue}>{Math.round(totalCalories)} / {Math.round(userData.calorieGoal)} kcal</Text>
           </View>
-          <View style={styles.macroItem}>
-            <Text style={styles.macroLabel}>Protein</Text>
-            <ProgressBar progress={safeDivision(Math.round(totalProtein), Math.round(userData.protein))} color="#31256C" style={styles.progressBar} />
-            <Text style={styles.macroValue}>{Math.round(totalProtein)} / {Math.round(userData.protein)} g</Text>
-          </View>
-          <View style={styles.macroItem}>
-            <Text style={styles.macroLabel}>Fats</Text>
-            <ProgressBar progress={safeDivision(Math.round(totalFats), Math.round(userData.fats))} color="#31256C" style={styles.progressBar} />
-            <Text style={styles.macroValue}>{Math.round(totalFats)} / {Math.round(userData.fats)} g</Text>
-          </View>
-          <View style={styles.macroItem}>
-            <Text style={styles.macroLabel}>Carbs</Text>
-            <ProgressBar progress={safeDivision(Math.round(totalCarbs), Math.round(userData.carbs))} color="#31256C" style={styles.progressBar} />
-            <Text style={styles.macroValue}>{Math.round(totalCarbs)} / {Math.round(userData.carbs)} g</Text>
-          </View>
         </View>
       )}
+
+        <View style={styles.buttonsRow}>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={() => router.push('/MealSearchScreen')}
+        >
+          <FontAwesome name="plus" size={18} color="#fff" style={styles.actionIcon} />
+          <Text style={styles.actionButtonText}>Add Meal</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={() => router.push('/LogWeightScreen')}
+        >
+          <FontAwesome name="balance-scale" size={18} color="#fff" style={styles.actionIcon} />
+          <Text style={styles.actionButtonText}>Log Weight</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Meals Section */}
       <View style={styles.mealsSection}>
         <Text style={styles.sectionTitle}>Meals</Text>
+        
+
+
+        {/* Meals list */}
         {meals.length === 0 ? (
           <Text style={styles.noMealsText}>No meals logged for today.</Text>
         ) : (
           meals.map((meal) => (
-            <View key={meal.id} style={styles.mealItem}>
-              <Text style={styles.mealName}>{meal.name}</Text>
-              <Text style={styles.mealMacros}>Protein: {meal.protein}g, Fats: {meal.fats}g, Carbs: {meal.carbs}g, Calories: {meal.calories}kcal</Text>
-            </View>
+            <TouchableOpacity 
+              key={meal.id} 
+              style={styles.mealItem}
+              onPress={() => handleEditMeal(meal)}
+            >
+              <View style={styles.mealItemContent}>
+                {meal.image_url ? (
+                  <Image 
+                    source={{ uri: meal.image_url }} 
+                    style={styles.mealImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.mealImagePlaceholder}>
+                    <FontAwesome name="cutlery" size={18} color="#ccc" />
+                  </View>
+                )}
+                <View style={styles.mealDetails}>
+                  <View style={styles.mealHeader}>
+                    <Text style={styles.mealName}>{meal.name}</Text>
+                    <Text style={styles.mealServing}>{meal.serving || '1 serving'}</Text>
+                  </View>
+                  <Text style={styles.mealMacros}>
+                    Protein: {meal.protein}g, Fats: {meal.fats}g, Carbs: {meal.carbs}g, Calories: {meal.calories}kcal
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                style={styles.editIconContainer}
+                onPress={() => handleEditMeal(meal)}
+              >
+                <FontAwesome name="pencil" size={14} color="#31256C" />
+              </TouchableOpacity>
+            </TouchableOpacity>
           ))
         )}
-        <TouchableOpacity style={styles.addMealButton} onPress={() => router.push('/MealSearchScreen')}>
-          <Text style={styles.addMealButtonText}>Add Meal</Text>
-        </TouchableOpacity>
       </View>
+
+      {/* Calendar Modal */}
       {showCalendar && (
-        <Modal
-          transparent={true}
-          animationType="slide"
-          visible={showCalendar}
-          onRequestClose={() => setShowCalendar(false)}
-        >
+        <Modal transparent={true} animationType="slide" visible={showCalendar} onRequestClose={() => setShowCalendar(false)}>
           <View style={styles.overlay}>
             <View style={styles.calendarContainer}>
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                display="default"
-                onChange={onDateChange}
-              />
+              <DateTimePicker value={selectedDate} mode="date" display="default" onChange={onDateChange} />
               <Button title="Close" onPress={() => setShowCalendar(false)} />
             </View>
           </View>
@@ -265,9 +323,7 @@ const styles = StyleSheet.create({
     fontFamily: 'AfacadFlux',
     marginRight: 8,
   },
-  calendarIcon: {
-    marginLeft: 0,
-  },
+  calendarIcon: {},
   greeting: {
     fontSize: 24,
     fontWeight: '800',
@@ -284,8 +340,20 @@ const styles = StyleSheet.create({
     color: '#31256C',
     fontFamily: 'AfacadFlux',
   },
-  macroItem: {
+  // Macros: row with Protein, Fats, Carbs
+  macroRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 15,
+  },
+  macroColumn: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 5,
+    width: '30%', // Add this
+  },
+  caloriesContainer: {
+    alignItems: 'center',
   },
   macroLabel: {
     fontSize: 18,
@@ -299,6 +367,18 @@ const styles = StyleSheet.create({
     color: '#31256C',
     marginTop: 5,
     fontFamily: 'AfacadFlux',
+  },
+  progressBar: {
+    height: 10,
+    borderRadius: 5,
+    width: '95%',
+    backgroundColor: '#E0E0E0', // Add this to see empty bar
+  },
+  progressBarSmall: {
+    height: 8,
+    borderRadius: 4,
+    width: '100%',
+    backgroundColor: '#E0E0E0', // Add this to see empty bar
   },
   mealsSection: {
     marginBottom: 30,
@@ -326,15 +406,28 @@ const styles = StyleSheet.create({
     color: '#31256C',
     fontFamily: 'AfacadFlux',
   },
-  addMealButton: {
-    backgroundColor: '#31256C',
-    padding: 15,
-    borderRadius: 25,
-    marginTop: 30,
-    alignItems: 'center',
-    fontFamily: 'AfacadFlux',
+  buttonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', // changed from space-around
+    marginBottom: 20,
+    paddingHorizontal: 0,
+    gap:15,
   },
-  addMealButtonText: {
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#31256C',
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    borderRadius: 12,
+    marginHorizontal: 0,
+  },
+  actionIcon: {
+    marginRight: 8,
+  },
+  actionButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
@@ -352,8 +445,55 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  progressBar: {
-    height: 10,
-    borderRadius: 5,
+  progressBarContainer: {
+    width: '100%',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  mealHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+  mealServing: {
+    fontSize: 14,
+    color: '#666',
+  },
+  editIcon: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+  },
+  mealItemContent: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  mealImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  mealImagePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  mealDetails: {
+    flex: 1,
+  },
+  editIconContainer: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

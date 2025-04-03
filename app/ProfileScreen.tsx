@@ -1,4 +1,3 @@
-import { auth, db, storage } from '@/FirebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 import { usePathname, useRouter } from 'expo-router';
 import { deleteUser, signOut } from 'firebase/auth';
@@ -6,6 +5,7 @@ import { deleteDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth, db, storage } from '../FirebaseConfig';
 
 interface UserData {
   name: string;

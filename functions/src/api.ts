@@ -1,8 +1,8 @@
 import axios from "axios";
 import * as crypto from "crypto-js";
 import * as dotenv from "dotenv";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
-import { onRequest } from "firebase-functions/v2/https";
+import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {onRequest} from "firebase-functions/v2/https";
 dotenv.config();
 
 // Configuration

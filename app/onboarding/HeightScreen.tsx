@@ -1,9 +1,9 @@
-import { auth, db } from '@/FirebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { doc, setDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../../FirebaseConfig';
 
 export default function HeightScreen() {
   const [height, setHeight] = useState<number>(170);
