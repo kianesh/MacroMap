@@ -223,29 +223,13 @@ export default function ReportsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={styles.contentContainer}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Reports</Text>
-        <View style={styles.timeRangeButtons}>
-          <TouchableOpacity 
-            style={[styles.timeButton, timeRange === 'week' && styles.activeTimeButton]}
-            onPress={() => setTimeRange('week')}
-          >
-            <Text style={[styles.timeButtonText, timeRange === 'week' && styles.activeTimeButtonText]}>Week</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.timeButton, timeRange === 'month' && styles.activeTimeButton]}
-            onPress={() => setTimeRange('month')}
-          >
-            <Text style={[styles.timeButtonText, timeRange === 'month' && styles.activeTimeButtonText]}>Month</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.timeButton, timeRange === 'year' && styles.activeTimeButton]}
-            onPress={() => setTimeRange('year')}
-          >
-            <Text style={[styles.timeButtonText, timeRange === 'year' && styles.activeTimeButtonText]}>Year</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Removed unnecessary time range buttons */}
       </View>
 
       <View style={styles.chartContainer}>
@@ -431,6 +415,8 @@ const styles = StyleSheet.create({
   },
   chart: {
     marginVertical: 8,
+    marginRight:30,
+    marginLeft:-10,
     borderRadius: 16,
   },
   noDataText: {
@@ -438,5 +424,8 @@ const styles = StyleSheet.create({
     color: '#666',
     marginVertical: 20,
     fontFamily: 'AfacadFlux',
+  },
+  contentContainer: {
+    paddingBottom: 100, // Add more padding at the bottom
   },
 });

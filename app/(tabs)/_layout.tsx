@@ -1,5 +1,4 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Href, Tabs, useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -118,27 +117,49 @@ export default function TabLayout() {
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.modalContainer}>
-                <TouchableOpacity
-                  style={styles.modalOption}
-                  onPress={() => handleOptionPress('/MealSearchScreen' as Href)}
-                >
-                  <FontAwesome name="search" size={20} color="#31256C" style={styles.modalIcon} />
-                  <Text style={styles.modalOptionText}>Food Search</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalOption}
-                  onPress={() => handleOptionPress('/nlp' as Href)}
-                >
-                  <FontAwesome name="language" size={20} color="#31256C" style={styles.modalIcon} />
-                  <Text style={styles.modalOptionText}>Natural Language</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalOption}
-                  onPress={() => handleOptionPress('/ai' as Href)}
-                >
-                  <FontAwesome5 name="robot" size={20} color="#31256C" style={styles.modalIcon} />
-                  <Text style={styles.modalOptionText}>AI Assistant</Text>
-                </TouchableOpacity>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Add</Text>
+                    <TouchableOpacity 
+                      onPress={() => setModalVisible(false)}
+                      style={styles.closeButton}
+                    >
+                      <FontAwesome name="times" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.modalOption}
+                    onPress={() => handleOptionPress('/MealSearchScreen')}
+                  >
+                    <FontAwesome name="search" size={20} color="#31256C" style={styles.modalIcon} />
+                    <Text style={styles.modalOptionText}>Food Search</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalOption}
+                    onPress={() => handleOptionPress('/nlp')}
+                  >
+                    <FontAwesome name="language" size={20} color="#31256C" style={styles.modalIcon} />
+                    <Text style={styles.modalOptionText}>Natural Language</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalOption}
+                    onPress={() => handleOptionPress('/CustomMealsScreen')}
+                  >
+                    <FontAwesome name="cutlery" size={20} color="#31256C" style={styles.modalIcon} />
+                    <Text style={styles.modalOptionText}>Create Custom Meal</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalOption}
+                    onPress={() => handleOptionPress('/CreateFoodScreen')}
+                  >
+                    <FontAwesome name="plus-circle" size={20} color="#31256C" style={styles.modalIcon} />
+                    <Text style={styles.modalOptionText}>Create Custom Food</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -204,6 +225,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 5,
+  },
+  modalContent: {
+    flexDirection: 'column',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#31256C',
+  },
+  closeButton: {
+    padding: 5,
   },
   modalOption: {
     flexDirection: 'row',

@@ -1,12 +1,19 @@
+import { FontAwesome } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
 import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { addDoc, collection } from 'firebase/firestore';
+import OpenAI from 'openai';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { auth, db } from '../../FirebaseConfig';
+import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FATSECRET_CLIENT_KEY, FATSECRET_CLIENT_SECRET, GOOGLE_MAPS_API_KEY, OPENAI_API_KEY } from 'react-native-dotenv';
+
+const GOOGLE_CUSTOM_SEARCH_ENGINE_ID = process.env.GOOGLE_CUSTOM_SEARCH_ENGINE_ID;
+const GOOGLE_CUSTOM_SEARCH_API_KEY = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
+
 // Conditionally import MapView
 let MapView: any = null;
 let Marker: any = null;
@@ -15,13 +22,6 @@ if (Platform.OS !== 'web') {
   MapView = Maps.default;
   Marker = Maps.Marker;
 }
-
-
-import {
-  FATSECRET_CLIENT_KEY,
-  FATSECRET_CLIENT_SECRET,
-  GOOGLE_MAPS_API_KEY,
-} from 'react-native-dotenv';
 
 const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
 
@@ -63,6 +63,9 @@ export default function MapScreen() {
   const [foodResults, setFoodResults] = useState<NutritionInfo[]>([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const router = useRouter();
+  
   const [loaded, error] = useFonts({
     'AfacadFlux': require('../../assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf'),
   });
@@ -81,8 +84,36 @@ export default function MapScreen() {
 
       let location = await Location.getCurrentPositionAsync({});
       setLocation(location.coords);
+      
+      // Load recent searches
+      loadRecentSearches();
     })();
   }, [loaded, error]);
+
+  const loadRecentSearches = async () => {
+    try {
+      const savedSearches = await AsyncStorage.getItem('recentMapSearches');
+      if (savedSearches) {
+        setRecentSearches(JSON.parse(savedSearches));
+      }
+    } catch (error) {
+      console.error('Failed to load recent searches', error);
+    }
+  };
+
+  const saveRecentSearch = async (search: string) => {
+    try {
+      let updatedSearches = [search];
+      const existingSearches = recentSearches.filter(item => item !== search);
+      
+      updatedSearches = [...updatedSearches, ...existingSearches].slice(0, 5);
+      setRecentSearches(updatedSearches);
+      
+      await AsyncStorage.setItem('recentMapSearches', JSON.stringify(updatedSearches));
+    } catch (error) {
+      console.error('Failed to save recent search', error);
+    }
+  };
 
   const generateOAuthSignature = (method: string, url: string, params: any) => {
     const oauthParams = {
@@ -111,6 +142,7 @@ export default function MapScreen() {
 
   const fetchNearbyRestaurants = async (searchQuery: string) => {
     if (!location) return;
+    
     try {
       const response = await axios.get(
         `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${searchQuery}&location=${location.latitude},${location.longitude}&radius=1500&key=${GOOGLE_MAPS_API_KEY}`
@@ -122,9 +154,7 @@ export default function MapScreen() {
   };
 
   const searchFoods = async (restaurantName: string) => {
-    if (!restaurantName.trim()) {
-      return;
-    }
+    if (!restaurantName.trim()) return;
 
     setIsLoading(true);
     try {
@@ -146,22 +176,63 @@ export default function MapScreen() {
         },
       });
 
-      const foods = response.data.foods?.food || [];
-      const foodDetails = Array.isArray(foods)
-        ? foods.map((food: any) => ({
-            food_name: food.food_name || 'Unknown Food',
-            brand_name: food.brand_name || '',
-            serving_qty: parseFloat(food.serving_qty) || 1,
-            serving_unit: food.serving_unit || 'serving',
-            nf_calories: parseFloat(food.nf_calories) || 0,
-            nf_protein: parseFloat(food.nf_protein) || 0,
-            nf_total_fat: parseFloat(food.nf_total_fat) || 0,
-            nf_total_carbohydrate: parseFloat(food.nf_total_carbohydrate) || 0,
-            image_url: food.food_images?.food_image?.[0]?.image_url || null,
-          }))
-        : [];
+      if (response.data.foods?.food) {
+        const foods = Array.isArray(response.data.foods.food) 
+          ? response.data.foods.food 
+          : [response.data.foods.food];
 
-      setFoodResults(foodDetails);
+        const foodDetails = await Promise.all(
+          foods.map(async (food: any) => {
+            const detailParams = {
+              method: 'food.get.v4',
+              food_id: food.food_id,
+              format: 'json',
+              include_food_images: true,
+            };
+
+            const detailHeaders = generateOAuthSignature(method, FATSECRET_API_URL, detailParams);
+            const detailResponse = await axios.get(FATSECRET_API_URL, {
+              params: {
+                ...detailParams,
+                ...detailHeaders
+              }
+            });
+
+            const foodDetail = detailResponse.data.food;
+            const primaryServing = Array.isArray(foodDetail.servings.serving) 
+              ? foodDetail.servings.serving[0] 
+              : foodDetail.servings.serving;
+
+            // Updated image URL handling
+            const imageUrl = foodDetail.images?.image?.[0]?.image_url || 
+                            foodDetail.food_images?.food_image?.[0]?.image_url || 
+                            null;
+
+            return {
+              food_name: foodDetail.food_name || 'Unknown Food',
+              brand_name: foodDetail.brand_name || '',
+              serving_qty: parseFloat(primaryServing.number_of_units) || 1,
+              serving_unit: primaryServing.measurement_description || 'serving',
+              nf_calories: parseFloat(primaryServing.calories) || 0,
+              nf_protein: parseFloat(primaryServing.protein) || 0,
+              nf_total_fat: parseFloat(primaryServing.fat) || 0,
+              nf_total_carbohydrate: parseFloat(primaryServing.carbohydrate) || 0,
+              image_url: imageUrl,
+            };
+          })
+        );
+
+        setFoodResults(foodDetails);
+        
+        // Then automatically find images for all results that don't have one
+        foodDetails.forEach((item, index) => {
+          if (!item.image_url) {
+            findImageWithLLM(item, index);
+          }
+        });
+      } else {
+        setFoodResults([]);
+      }
     } catch (error) {
       console.error('Error searching foods:', error);
       alert('Failed to search for foods. Please try again.');
@@ -170,41 +241,119 @@ export default function MapScreen() {
     }
   };
 
-  const logMeal = async (meal: NutritionInfo) => {
-    const user = auth.currentUser;
-    if (!user) {
-      alert('Please sign in to log meals');
-      return;
-    }
-
+  const findImageWithLLM = async (item: NutritionInfo, index: number) => {
     try {
-      await addDoc(collection(db, 'meals'), {
-        userId: user.uid,
-        name: meal.food_name,
-        brand_name: meal.brand_name || 'N/A',
-        protein: Number(meal.nf_protein) || 0,
-        fats: Number(meal.nf_total_fat) || 0,
-        carbs: Number(meal.nf_total_carbohydrate) || 0,
-        calories: Number(meal.nf_calories) || 0,
-        timestamp: new Date(),
+      // Skip if image already exists
+      if (item.image_url) return;
+      
+      const query = `${item.food_name} ${item.brand_name || ''} food photo`;
+      
+      // Step 1: Get image candidates using Google Custom Search API
+      const searchResponse = await axios.get(
+        'https://www.googleapis.com/customsearch/v1',
+        {
+          params: {
+            key: GOOGLE_CUSTOM_SEARCH_API_KEY,
+            cx: GOOGLE_CUSTOM_SEARCH_ENGINE_ID,
+            q: query,
+            searchType: 'image',
+            num: 5,
+            imgSize: 'medium',
+            safe: 'active',
+          }
+        }
+      );
+      
+      // If no images found, exit early
+      if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
+        return;
+      }
+      
+      // Step 2: Format the images for LLM evaluation
+      const images = searchResponse.data.items.map(item => ({
+        url: item.link,
+        title: item.title || '',
+        snippet: item.snippet || '',
+        contextLink: item.image?.contextLink || ''
+      }));
+      
+      // Step 3: Use OpenAI to select the best image
+      const openai = new OpenAI({
+        apiKey: OPENAI_API_KEY,
       });
-      alert('Meal logged successfully!');
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert food photographer assistant. Your task is to select the most appetizing and accurate image for a specific food item."
+          },
+          {
+            role: "user",
+            content: `I'm looking for the best image of "${query}". Please analyze these images and select the BEST ONE based on:
+            1. Visual appeal (appetizing, well-lit, professional quality)
+            2. Accuracy (most closely matches the food item)
+            3. Clear presentation (food is clearly visible, not obscured)
+            4. Neutral background (professional food photography style)
+            
+            Here are the candidate images:
+            ${JSON.stringify(images)}
+            
+            Return ONLY the URL of the best image in this exact format: "BEST_IMAGE_URL: [url]"`
+          }
+        ]
+      });
+      
+      const result = completion.choices[0]?.message?.content;
+      if (result) {
+        const match = result.match(/BEST_IMAGE_URL: (https?:\/\/[^\s"]+)/);
+        if (match && match[1]) {
+          // Update results array with the best image URL
+          const updatedResults = [...foodResults];
+          updatedResults[index] = {
+            ...updatedResults[index],
+            image_url: match[1]
+          };
+          setFoodResults(updatedResults);
+          return;
+        }
+      }
+      
+      // Fallback to first image if LLM selection fails
+      const updatedResults = [...foodResults];
+      updatedResults[index] = {
+        ...updatedResults[index],
+        image_url: images[0].url
+      };
+      setFoodResults(updatedResults);
     } catch (error) {
-      console.error('Error logging meal:', error);
-      alert('Failed to log meal. Please try again.');
+      console.error('Error finding food image with LLM:', error);
     }
   };
 
   const handleSearch = async () => {
     if (!query) return;
+    
+    // Save recent search
+    await saveRecentSearch(query);
+    
     await fetchNearbyRestaurants(query);
     setSelectedRestaurant(query);
     await searchFoods(query);
   };
 
-  const handleMarkerPress = async (restaurantName: string) => {
+  const handleMarkerPress = async (restaurant: Restaurant) => {
+    const restaurantName = restaurant.name;
     setSelectedRestaurant(restaurantName);
-    await searchFoods(restaurantName);
+    setQuery(restaurantName);
+    await saveRecentSearch(restaurantName);
+    
+    // Use the enhanced function instead of basic searchFoods
+    await getEnhancedRestaurantInfo(
+      restaurantName, 
+      { lat: restaurant.geometry.location.lat, lng: restaurant.geometry.location.lng }
+    );
   };
 
   const handleMapPress = () => {
@@ -215,53 +364,57 @@ export default function MapScreen() {
   const renderPopup = () => (
     <View style={styles.popup}>
       <Text style={styles.popupTitle}>{selectedRestaurant}</Text>
-      <ScrollView>
-        {isLoading ? (
-          <Text style={styles.loadingText}>Loading...</Text>
-        ) : foodResults.length > 0 ? (
-          foodResults.map((result, index) => (
-            <View key={index} style={styles.resultItem}>
-              {result.image_url ? (
-                <Image 
-                  source={{ uri: result.image_url }} 
-                  style={styles.foodImage}
-                  resizeMode="cover"
-                  onError={() => console.log('Error loading image')}
-                />
-              ) : (
-                <View style={[styles.foodImage, styles.placeholderImage]}>
-                  <Text style={styles.placeholderText}>No Image</Text>
-                </View>
-              )}
-              <View style={styles.resultContent}>
-                <Text style={styles.resultName}>{result.food_name}</Text>
-                <Text style={styles.resultCalories}>{result.nf_calories} Cal</Text>
-                <Text style={styles.resultMacros}>
-                  P: {result.nf_protein}g • F: {result.nf_total_fat}g • C: {result.nf_total_carbohydrate}g
-                </Text>
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity 
-                    style={styles.addButton} 
-                    onPress={() => logMeal(result)}
-                  >
-                    <Text style={styles.addButtonText}>Add Food</Text>
-                  </TouchableOpacity>
-                  <View style={styles.deliveryButtons}>
-                    <TouchableOpacity style={styles.uberButton}>
-                      <Text style={styles.deliveryButtonText}>Uber Eats</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.doordashButton}>
-                      <Text style={styles.deliveryButtonText}>DoorDash</Text>
-                    </TouchableOpacity>
+      
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#31256C" />
+          <Text style={styles.loadingText}>Finding menu items...</Text>
+        </View>
+      ) : (
+        <ScrollView>
+          {foodResults.length > 0 ? (
+            foodResults.map((result, index) => (
+              <View key={index} style={styles.resultItem}>
+                {result.image_url ? (
+                  <Image 
+                    source={{ uri: result.image_url }} 
+                    style={styles.foodImage}
+                  />
+                ) : (
+                  <View style={[styles.foodImage, styles.placeholderImage]}>
+                    <Text style={styles.placeholderText}>No Image</Text>
                   </View>
+                )}
+                <View style={styles.resultContent}>
+                  <Text style={styles.resultName}>{result.food_name}</Text>
+                  {result.brand_name && (
+                    <Text style={styles.resultBrand}>{result.brand_name}</Text>
+                  )}
+                  <Text style={styles.resultMacros}>
+                    Cal: {result.nf_calories} • P: {result.nf_protein}g • 
+                    C: {result.nf_total_carbohydrate}g • F: {result.nf_total_fat}g
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.logButton}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/AdjustServingScreen',
+                        params: { meal: JSON.stringify(result) }
+                      });
+                    }}
+                  >
+                    <Text style={styles.logButtonText}>Log</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            </View>
-          ))
-        ) : (
-          <Text style={styles.noResultsText}>No food items found.</Text>
-        )}
-      </ScrollView>
+            ))
+          ) : (
+            <Text style={styles.noResultsText}>
+              No menu information found for this restaurant
+            </Text>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 
@@ -272,22 +425,44 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search for restaurants or recipes"
-          value={query}
-          onChangeText={setQuery}
-        />
-        <TouchableOpacity 
-          style={[styles.searchButton, isLoading && styles.disabledButton]} 
-          onPress={handleSearch}
-          disabled={isLoading}
-        >
-          <Text style={styles.searchButtonText}>
-            {isLoading ? 'Searching...' : 'Search'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.searchInputContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search for restaurants or recipes"
+            value={query}
+            onChangeText={setQuery}
+          />
+          <TouchableOpacity 
+            style={styles.searchIconButton} 
+            onPress={handleSearch}
+            disabled={isLoading}
+          >
+            <FontAwesome name="search" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+        
+        {recentSearches.length > 0 && (
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.recentSearchesContainer}
+          >
+            {recentSearches.map((search, index) => (
+              <TouchableOpacity 
+                key={index}
+                style={styles.recentSearchChip}
+                onPress={() => {
+                  setQuery(search);
+                  handleSearch();
+                }}
+              >
+                <Text style={styles.recentSearchText}>{search}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
       </View>
+      
       {location && (
         <MapView
           style={styles.map}
@@ -299,6 +474,17 @@ export default function MapScreen() {
           }}
           onPress={handleMapPress}
         >
+          {/* User location marker */}
+          <Marker
+            coordinate={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+            }}
+            title="You are here"
+            pinColor="#31256C" // Purple marker for user
+          />
+          
+          {/* Restaurant markers */}
           {restaurants.map((restaurant) => (
             <Marker
               key={restaurant.place_id}
@@ -308,7 +494,10 @@ export default function MapScreen() {
               }}
               title={restaurant.name}
               description={restaurant.vicinity}
-              onPress={() => handleMarkerPress(restaurant.name)}
+              onPress={() => {
+                setQuery(restaurant.name);
+                handleMarkerPress(restaurant);
+              }}
             />
           ))}
         </MapView>
@@ -316,6 +505,201 @@ export default function MapScreen() {
       {selectedRestaurant && renderPopup()}
     </View>
   );
+
+  // Initialize OpenAI client inside the component
+  const openai = new OpenAI({
+    apiKey: OPENAI_API_KEY,
+  });
+
+  // Move all these functions inside the component
+  /**
+   * Gets enhanced restaurant information using LLM and web search data
+   * @param restaurantName Name of the selected restaurant
+   * @param location Restaurant location coordinates
+   */
+  const getEnhancedRestaurantInfo = async (
+    restaurantName: string, 
+    location: { lat: number, lng: number }
+  ) => {
+    setIsLoading(true);
+    try {
+      // Step 1: Get restaurant details from Google Places API
+      const placeDetails = await fetchRestaurantDetails(restaurantName, location);
+      
+      // Step 2: Search web for additional menu information
+      const webSearchResults = await searchWebForRestaurantMenu(restaurantName);
+      
+      // Step 3: Use LLM to generate structured food items based on the data
+      const structuredFoodItems = await generateStructuredFoodItems(
+        restaurantName, 
+        placeDetails, 
+        webSearchResults
+      );
+      
+      // Update food results
+      setFoodResults(structuredFoodItems);
+    } catch (error) {
+      console.error('Error getting enhanced restaurant info:', error);
+      // Fall back to basic search
+      searchFoods(restaurantName);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Fetch restaurant details from Google Places API
+   */
+  const fetchRestaurantDetails = async (
+    restaurantName: string, 
+    location: { lat: number, lng: number }
+  ) => {
+    const response = await axios.get(
+      'https://maps.googleapis.com/maps/api/place/details/json',
+      {
+        params: {
+          key: GOOGLE_MAPS_API_KEY,
+          place_id: restaurants.find(r => r.name === restaurantName)?.place_id || '',
+          fields: 'name,rating,formatted_address,formatted_phone_number,website,price_level,review'
+        }
+      }
+    );
+    
+    return response.data.result || {};
+  };
+
+  /**
+   * Search the web for restaurant menu information
+   */
+  const searchWebForRestaurantMenu = async (restaurantName: string) => {
+    try {
+      // Use Google Custom Search API to find menu information
+      const response = await axios.get(
+        'https://www.googleapis.com/customsearch/v1',
+        {
+          params: {
+            key: GOOGLE_MAPS_API_KEY,
+            cx: '65bc6b17f0d9145d0',
+            q: `${restaurantName} menu popular dishes nutrition information`,
+            num: 5
+          }
+        }
+      );
+      
+      // Extract relevant snippets from search results
+      return response.data.items?.map(item => ({
+        title: item.title,
+        snippet: item.snippet,
+        link: item.link
+      })) || [];
+    } catch (error) {
+      console.error('Error searching web for restaurant menu:', error);
+      return [];
+    }
+  };
+
+  /**
+   * Use LLM to generate structured food items based on search data
+   */
+  const generateStructuredFoodItems = async (
+    restaurantName: string,
+    placeDetails: any,
+    webSearchResults: any[]
+  ) => {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert nutritionist specializing in restaurant menus. 
+            Your task is to generate structured nutrition information for popular items at restaurants.
+            You should return JSON data for 5-8 popular menu items with reasonable nutrition estimates.`
+          },
+          {
+            role: "user",
+            content: `Generate structured nutrition information for popular menu items at ${restaurantName}.
+            
+            Restaurant details:
+            ${JSON.stringify(placeDetails)}
+            
+            Web search information:
+            ${JSON.stringify(webSearchResults)}
+            
+            Return a JSON array of food items with this exact structure:
+            [
+              {
+                "food_name": "Item Name",
+                "brand_name": "${restaurantName}",
+                "serving_qty": 1,
+                "serving_unit": "serving",
+                "nf_calories": 800,
+                "nf_total_fat": 40,
+                "nf_protein": 25,
+                "nf_total_carbohydrate": 80
+              }
+            ]
+            
+            Make reasonable estimates for nutrition values if exact information isn't available.
+            The response should ONLY include the JSON array, nothing else.`
+          }
+        ],
+        response_format: { type: "json_object" }
+      });
+      
+      const result = completion.choices[0]?.message?.content;
+      if (!result) return [];
+      
+      const parsedResult = JSON.parse(result);
+      const foodItems = parsedResult.items || [];
+      
+      // Find images for all food items
+      return await findImagesForFoodItems(foodItems);
+    } catch (error) {
+      console.error('Error generating structured food items:', error);
+      return [];
+    }
+  };
+
+  // Add this function to get images for the food items
+  const findImagesForFoodItems = async (foodItems: NutritionInfo[]) => {
+    const itemsWithImages = [...foodItems];
+    
+    for (let i = 0; i < itemsWithImages.length; i++) {
+      try {
+        const item = itemsWithImages[i];
+        if (item.image_url) continue;
+        
+        const query = `${item.food_name} from ${item.brand_name} restaurant food photo`;
+        
+        const searchResponse = await axios.get(
+          'https://www.googleapis.com/customsearch/v1',
+          {
+            params: {
+              key: GOOGLE_MAPS_API_KEY,
+              cx: '65bc6b17f0d9145d0', // Your search engine ID
+              q: query,
+              searchType: 'image',
+              num: 1,
+              imgSize: 'medium',
+              safe: 'active',
+            }
+          }
+        );
+        
+        if (searchResponse.data.items && searchResponse.data.items.length > 0) {
+          itemsWithImages[i] = {
+            ...itemsWithImages[i],
+            image_url: searchResponse.data.items[0].link
+          };
+        }
+      } catch (error) {
+        console.error('Error finding image for food item:', error);
+      }
+    }
+    
+    return itemsWithImages;
+  };
 }
 
 const styles = StyleSheet.create({
@@ -331,7 +715,12 @@ const styles = StyleSheet.create({
     right: 10,
     zIndex: 10,
   },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   searchInput: {
+    flex: 1,
     height: 50,
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAF6',
@@ -343,22 +732,14 @@ const styles = StyleSheet.create({
     color: '#3C4858',
     fontFamily: 'AfacadFlux',
   },
-  searchButton: {
+  searchIconButton: {
     backgroundColor: '#31256C',
-    padding: 15,
+    width: 50,
+    height: 50,
     borderRadius: 25,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
-    fontFamily: 'AfacadFlux',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  searchButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    fontFamily: 'AfacadFlux',
+    marginLeft: 10,
   },
   map: {
     width: Dimensions.get('window').width,
@@ -369,7 +750,7 @@ const styles = StyleSheet.create({
     left: 10,
     top: 130,
     bottom: 10,
-    width: '60%',
+    width: '75%',
     backgroundColor: 'white',
     borderRadius: 15,
     padding: 15,
@@ -389,22 +770,22 @@ const styles = StyleSheet.create({
   },
   resultItem: {
     marginBottom: 15,
-    padding: 10,
+    padding: 15,
     backgroundColor: '#fff',
     borderRadius: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
     flexDirection: 'row',
     borderColor: '#E8EAF6',
     borderWidth: 1,
   },
   foodImage: {
-    width: 60,
-    height: 60,
+    width: 80,
+    height: 80,
     borderRadius: 8,
-    marginRight: 10,
+    marginRight: 15,
   },
   placeholderImage: {
     backgroundColor: '#F0F0F0',
@@ -413,78 +794,32 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: '#999',
-    fontSize: 10,
+    fontSize: 12,
   },
   resultContent: {
     flex: 1,
   },
   resultName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    marginBottom: 3,
     fontFamily: 'AfacadFlux',
   },
-  resultCalories: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#31256C',
-    marginBottom: 3,
+  resultBrand: {
+    fontSize: 16,
+    color: '#888',
     fontFamily: 'AfacadFlux',
   },
   resultMacros: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 5,
-    fontFamily: 'AfacadFlux',
-  },
-  buttonRow: {
-    flexDirection: 'column',
-  },
-  addButton: {
-    backgroundColor: '#31256C',
-    padding: 8,
-    borderRadius: 15,
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-    fontFamily: 'AfacadFlux',
-  },
-  deliveryButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  uberButton: {
-    flex: 1,
-    backgroundColor: '#31256C',
-    padding: 5,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginRight: 3,
-  },
-  doordashButton: {
-    flex: 1,
-    backgroundColor: '#31256C',
-    padding: 5,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginLeft: 3,
-  },
-  deliveryButtonText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 16,
+    marginVertical: 5,
     fontFamily: 'AfacadFlux',
   },
   loadingText: {
     fontSize: 16,
-    color: '#888',
     textAlign: 'center',
-    marginTop: 20,
     fontFamily: 'AfacadFlux',
+    marginTop: 15,
+    color: '#31256C',
   },
   noResultsText: {
     fontSize: 16,
@@ -492,5 +827,42 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     fontFamily: 'AfacadFlux',
+  },
+  recentSearchesContainer: {
+    marginBottom: 10,
+  },
+  recentSearchChip: {
+    backgroundColor: '#E8EAF6',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginRight: 8,
+  },
+  recentSearchText: {
+    color: '#31256C',
+    fontFamily: 'AfacadFlux',
+  },
+  chevronContainer: {
+    justifyContent: 'center',
+    paddingLeft: 10,
+  },
+  logButton: {
+    backgroundColor: '#31256C',
+    padding: 10,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginTop: 10,
+    width: 80,
+  },
+  logButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'AfacadFlux',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
   },
 });

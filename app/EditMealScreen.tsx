@@ -2,7 +2,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { deleteDoc, doc, Timestamp, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
-import { Alert, Image, Keyboard, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Alert, Image, Linking, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { db } from '../FirebaseConfig';
 
 interface NutritionInfo {
@@ -120,11 +120,12 @@ export default function EditMealScreen() {
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView 
-        style={styles.container}
-        contentContainerStyle={styles.content}
+        style={styles.scrollView}
+        contentContainerStyle={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={true}
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -134,21 +135,22 @@ export default function EditMealScreen() {
           <View style={{width: 24}}></View>
         </View>
         
-        <View style={styles.foodInfoContainer}>
-          {mealData.image_url ? (
-            <Image 
-              source={{ uri: mealData.image_url }} 
-              style={styles.foodImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.foodImage, styles.placeholderImage]}>
-              <Text style={styles.placeholderText}>No Image</Text>
-            </View>
-          )}
-          <Text style={styles.foodName}>{mealData.food_name}</Text>
-          {mealData.brand_name && <Text style={styles.brandName}>{mealData.brand_name}</Text>}
-        </View>
+         <View style={styles.foodInfoContainer}>
+                    {mealData.image_url ? (
+                      <Image 
+                        source={{ uri: mealData.image_url }} 
+                        style={styles.foodImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.foodImage, styles.placeholderImage]}>
+                        <Text style={styles.placeholderText}>No Image</Text>
+                      </View>
+                    )}
+                    <Text style={styles.foodName}>{mealData.food_name}</Text>
+                    {mealData.brand_name && <Text style={styles.brandName}>{mealData.brand_name}</Text>}
+                  </View>
+        
 
         <View style={styles.servingContainer}>
           {isBranded ? (
@@ -239,20 +241,23 @@ export default function EditMealScreen() {
           <Text style={styles.deleteButtonText}>Remove Meal</Text>
         </TouchableOpacity>
         
-        <View style={{height: 120}} />
+        {/* Add extra padding at the bottom for better scrolling */}
+        <View style={{height: 60}} />
       </ScrollView>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.dismissKeyboard} />
-      </TouchableWithoutFeedback>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // Update the container style in EditMealScreen
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#FAFAFA',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 20,
   },
   header: {
     flexDirection: 'row',
@@ -436,16 +441,5 @@ const styles = StyleSheet.create({
     color: '#FF3B30',
     fontSize: 18,
     fontWeight: '600',
-  },
-  content: {
-    flexGrow: 1,
-    padding: 20,
-  },
-  dismissKeyboard: {
-    flex: 1,
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'transparent',
-  },
+  }
 });

@@ -1,16 +1,19 @@
 import { FontAwesome } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { addDoc, collection } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import OpenAI from 'openai';
 import React, { useEffect, useState } from 'react';
-import { Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { auth, db } from '../FirebaseConfig';
+import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FATSECRET_CLIENT_KEY, FATSECRET_CLIENT_SECRET, OPENAI_API_KEY } from 'react-native-dotenv';
 
-const FATSECRET_CLIENT_KEY = '2e3df77a4d7a4481a05a9d79152e64ad';
-const FATSECRET_CLIENT_SECRET = '8591547e4ea24556a46a8005398fb5ba';
+const GOOGLE_CUSTOM_SEARCH_ENGINE_ID = process.env.GOOGLE_CUSTOM_SEARCH_ENGINE_ID;
+const GOOGLE_CUSTOM_SEARCH_API_KEY = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
+
 const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
 
 SplashScreen.preventAutoHideAsync();
@@ -31,15 +34,21 @@ export default function MealSearchScreen() {
   const [query, setQuery] = useState<string>('');
   const [results, setResults] = useState<NutritionInfo[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const router = useRouter();
   const [loaded, error] = useFonts({
     'AfacadFlux': require('../assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf'),
   });
 
+  const functions = getFunctions();
+  const findFoodImage = httpsCallable(functions, 'findFoodImage');
+
   useEffect(() => {
     if (loaded || error) {
       SplashScreen.hideAsync();
     }
+    
+    loadRecentSearches();
   }, [loaded, error]);
 
   const generateOAuthSignature = (method: string, url: string, params: any) => {
@@ -67,14 +76,71 @@ export default function MealSearchScreen() {
     };
   };
 
+  const loadRecentSearches = async () => {
+    try {
+      const savedSearches = await AsyncStorage.getItem('recentFoodSearches');
+      if (savedSearches) {
+        setRecentSearches(JSON.parse(savedSearches));
+      }
+    } catch (error) {
+      console.error('Failed to load recent searches', error);
+    }
+  };
+
+  const saveRecentSearch = async (search: string) => {
+    if (!search.trim()) return;
+    
+    try {
+      let updatedSearches = [search];
+      const existingSearches = recentSearches.filter(item => item !== search);
+      
+      updatedSearches = [...updatedSearches, ...existingSearches].slice(0, 5);
+      setRecentSearches(updatedSearches);
+      
+      await AsyncStorage.setItem('recentFoodSearches', JSON.stringify(updatedSearches));
+    } catch (error) {
+      console.error('Failed to save recent search', error);
+    }
+  };
+
   const searchFoods = async () => {
     if (!query.trim()) {
       alert('Please enter a search term');
       return;
     }
 
+    // Save search term
+    await saveRecentSearch(query);
+    
     setIsLoading(true);
     try {
+      // Option 1: For local development when the Cloud Function isn't deployed yet
+      // Continue using your existing direct API call implementation
+      
+      // Option 2: Once the Cloud Function is deployed, use this:
+      /*
+      const response = await axios.get(
+        `https://YOUR_REGION-YOUR_PROJECT_ID.cloudfunctions.net/getFoodData?query=${encodeURIComponent(query)}`
+      );
+      
+      // Transform the response to match your app's expected format
+      const foodDetails = response.data.results.map((item: any) => ({
+        food_name: item.food_name,
+        brand_name: item.brand || '',
+        serving_qty: item.serving_qty || 1,
+        serving_unit: item.serving_unit || 'serving',
+        nf_calories: item.macros.calories || 0,
+        nf_protein: item.macros.protein || 0,
+        nf_total_fat: item.macros.fat || 0,
+        nf_total_carbohydrate: item.macros.carbs || 0,
+        image_url: item.image_url,
+        source: item.source // New field to display data source
+      }));
+      
+      setResults(foodDetails);
+      */
+
+      // Until the Cloud Function is deployed, use your current implementation:
       const method = 'GET';
       const params = {
         method: 'foods.search',
@@ -144,6 +210,13 @@ export default function MealSearchScreen() {
         );
 
         setResults(foodDetails);
+
+        // Automatically find images for all results that don't have one
+        foodDetails.forEach((item, index) => {
+          if (!item.image_url) {
+            findImageWithLLM(item, index);
+          }
+        });
       } else {
         setResults([]);
       }
@@ -154,53 +227,156 @@ export default function MealSearchScreen() {
       setIsLoading(false);
     }
   };
-  
-  const logMeal = async (meal: NutritionInfo) => {
-    const user = auth.currentUser;
-    if (!user) {
-      alert('Please sign in to log meals');
-      return;
-    }
 
+
+  const findImageWithLLM = async (item: NutritionInfo, index: number) => {
     try {
-      await addDoc(collection(db, 'meals'), {
-        userId: user.uid,
-        name: meal.food_name,
-        brand_name: meal.brand_name || 'N/A',
-        protein: Number(meal.nf_protein) || 0,
-        fats: Number(meal.nf_total_fat) || 0,
-        carbs: Number(meal.nf_total_carbohydrate) || 0,
-        calories: Number(meal.nf_calories) || 0,
-        timestamp: new Date(),
+      // Don't search for images if one already exists
+      if (item.image_url) return;
+      
+      const query = `${item.food_name} ${item.brand_name || ''} food photo`;
+      
+      // Step 1: Get image candidates using Google Custom Search API
+      const searchResponse = await axios.get(
+        'https://www.googleapis.com/customsearch/v1',
+        {
+          params: {
+            key: GOOGLE_CUSTOM_SEARCH_API_KEY, // Using your existing API key
+            cx: GOOGLE_CUSTOM_SEARCH_ENGINE_ID, // Replace with your search engine ID
+            q: query,
+            searchType: 'image',
+            num: 5, // Get multiple images for LLM to choose from
+            imgSize: 'medium',
+            safe: 'active',
+          }
+        }
+      );
+      
+      // If no images found, exit early
+      if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
+        return;
+      }
+      
+      // Step 2: Format the images for LLM evaluation
+      const images = searchResponse.data.items.map(item => ({
+        url: item.link,
+        title: item.title || '',
+        snippet: item.snippet || '',
+        contextLink: item.image?.contextLink || ''
+      }));
+      
+      // Step 3: Use OpenAI to select the best image
+      const openai = new OpenAI({
+        apiKey: OPENAI_API_KEY,
       });
-      router.push('/(tabs)');
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert food photographer assistant. Your task is to select the most appetizing and accurate image for a specific food item."
+          },
+          {
+            role: "user",
+            content: `I'm looking for the best image of "${query}". Please analyze these images and select the BEST ONE based on:
+            1. Visual appeal (appetizing, well-lit, professional quality)
+            2. Accuracy (most closely matches the food item)
+            3. Clear presentation (food is clearly visible, not obscured)
+            4. Neutral background (professional food photography style)
+               
+            Here are the candidate images:
+            ${JSON.stringify(images)}
+            
+            Return ONLY the URL of the best image in this exact format: "BEST_IMAGE_URL: [url]"`
+          }
+        ]
+      });
+      
+      const result = completion.choices[0]?.message?.content;
+      if (result) {
+        const match = result.match(/BEST_IMAGE_URL: (https?:\/\/[^\s"]+)/);
+        if (match && match[1]) {
+          // Update results array with the best image URL
+          const updatedResults = [...results];
+          updatedResults[index] = {
+            ...updatedResults[index],
+            image_url: match[1]
+          };
+          setResults(updatedResults);
+          return;
+        }
+      }
+      
+      // Fallback to first image if LLM selection fails
+      const updatedResults = [...results];
+      updatedResults[index] = {
+        ...updatedResults[index],
+        image_url: images[0].url
+      };
+      setResults(updatedResults);
+      
     } catch (error) {
-      console.error('Error logging meal:', error);
-      alert('Failed to log meal. Please try again.');
+      if (axios.isAxiosError(error)) {
+        console.error('Axios Error Details:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          headers: error.response?.headers,
+          config: {
+            url: error.config?.url,
+            params: error.config?.params,
+            headers: error.config?.headers
+          }
+        });
+      } else {
+        console.error('Non-Axios error:', error);
+      }
     }
-  };
-
-  const openLink = (url: string) => {
-    Linking.openURL(url).catch(err => console.error('Error opening link:', err));
   };
 
   return (
     <View style={styles.container}>
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search for meals"
-        value={query}
-        onChangeText={setQuery}
-      />
-      <TouchableOpacity 
-        style={[styles.searchButton, isLoading && styles.disabledButton]} 
-        onPress={searchFoods}
-        disabled={isLoading}
-      >
-        <Text style={styles.searchButtonText}>
-          {isLoading ? 'Searching...' : 'Search'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.searchInputContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search for meals"
+          value={query}
+          onChangeText={setQuery}
+        />
+        <TouchableOpacity 
+          style={styles.searchIconButton} 
+          onPress={searchFoods}
+          disabled={isLoading}
+        >
+          <FontAwesome name={isLoading ? 'spinner' : 'search'} size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Recent Searches */}
+      {recentSearches.length > 0 && (
+        <View style={styles.recentSearchesContainer}>
+          <Text style={styles.recentSearchesTitle}>Recent Searches</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.recentSearchScroll}
+          >
+            {recentSearches.map((search, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.recentSearchChip}
+                onPress={() => {
+                  setQuery(search);
+                  searchFoods();
+                }}
+              >
+                <Text style={styles.recentSearchText}>{search}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
       
       <ScrollView>
         {results.length > 0 ? (
@@ -238,12 +414,48 @@ export default function MealSearchScreen() {
               <View style={styles.chevronContainer}>
                 <FontAwesome name="chevron-right" size={20} color="#31256C" />
               </View>
+              {!result.image_url && (
+                <TouchableOpacity 
+                  style={styles.findImageButton}
+                  onPress={() => findImageWithLLM(result, index)}
+                >
+                  <Text style={styles.findImageButtonText}>Find Image (AI)</Text>
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           ))
         ) : (
           <Text style={styles.noResultsText}>
             {isLoading ? 'Loading...' : 'No results found.'}
           </Text>
+        )}
+
+        {/* Add this at the end of your ScrollView, right before the closing tag */}
+        {!isLoading && results.length === 0 && query.trim() !== '' && (
+          <View style={styles.createCustomContainer}>
+            <Text style={styles.noResultsText}>No results found for "{query}"</Text>
+            <Text style={styles.createCustomText}>Can't find what you're looking for?</Text>
+            <TouchableOpacity
+              style={styles.createCustomButton}
+              onPress={() => router.push('/CreateFoodScreen')}
+            >
+              <FontAwesome name="plus-circle" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.createCustomButtonText}>Create Custom Food Item</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* If there are results, add this at the bottom */}
+        {results.length > 0 && (
+          <View style={styles.createCustomFooter}>
+            <TouchableOpacity
+              style={styles.createCustomFooterButton}
+              onPress={() => router.push('/CreateFoodScreen')}
+            >
+              <FontAwesome name="plus" size={16} color="#31256C" style={{ marginRight: 8 }} />
+              <Text style={styles.createCustomFooterText}>Create Your Own Food Item</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </ScrollView>
     </View>
@@ -257,25 +469,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
     fontFamily: 'AfacadFlux',
   },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
   searchInput: {
+    flex: 1,
     height: 50,
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAF6',
     borderWidth: 2,
     borderRadius: 15,
-    marginVertical: 15,
     paddingHorizontal: 25,
     fontSize: 16,
     color: '#3C4858',
     fontFamily: 'AfacadFlux',
   },
-  searchButton: {
+  searchIconButton: {
     backgroundColor: '#31256C',
-    padding: 15,
+    width: 50,
+    height: 50,
     borderRadius: 25,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    fontFamily: 'AfacadFlux',
+    marginLeft: 10,
   },
   disabledButton: {
     opacity: 0.6,
@@ -371,5 +589,99 @@ const styles = StyleSheet.create({
   chevronContainer: {
     justifyContent: 'center',
     paddingLeft: 10,
+  },
+  recentSearchesContainer: {
+    marginBottom: 15,
+  },
+  recentSearchesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#31256C',
+    marginBottom: 8,
+    fontFamily: 'AfacadFlux',
+  },
+  recentSearchScroll: {
+    flexDirection: 'row',
+  },
+  recentSearchChip: {
+    backgroundColor: '#E8EAF6',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginRight: 8,
+  },
+  recentSearchText: {
+    color: '#31256C',
+    fontFamily: 'AfacadFlux',
+  },
+  createCustomContainer: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 25,
+    borderRadius: 15,
+    marginTop: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createCustomText: {
+    fontSize: 18,
+    color: '#31256C',
+    marginVertical: 15,
+    textAlign: 'center',
+    fontFamily: 'AfacadFlux',
+  },
+  createCustomButton: {
+    flexDirection: 'row',
+    backgroundColor: '#31256C',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  createCustomButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'AfacadFlux',
+  },
+  createCustomFooter: {
+    marginTop: 20,
+    marginBottom: 40,
+    alignItems: 'center',
+  },
+  createCustomFooterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#31256C',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+  },
+  createCustomFooterText: {
+    fontSize: 16,
+    color: '#31256C',
+    fontWeight: '600',
+    fontFamily: 'AfacadFlux',
+  },
+  findImageButton: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: '#31256C',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  findImageButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+    fontFamily: 'AfacadFlux',
   },
 });

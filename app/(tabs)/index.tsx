@@ -5,7 +5,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { collection, doc, getDoc, getDocs, query, Timestamp, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
-import { Button, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { ProgressBar } from 'react-native-paper';
 import { auth, db } from '../../FirebaseConfig';
 
@@ -107,7 +107,10 @@ export default function DashboardScreen() {
 
   const onDateChange = (event: any, date?: Date) => {
     setShowCalendar(false);
-    if (date) setSelectedDate(date);
+    if (date) {
+      setSelectedDate(date);
+      fetchDailyMealData(date); // Immediately fetch data for the selected date
+    }
   };
 
   const safeDivision = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator : 0;
@@ -129,6 +132,16 @@ export default function DashboardScreen() {
     router.push(`/EditMealScreen?meal=${JSON.stringify(nutritionInfo)}`);
   };
 
+  const handleDateButtonPress = () => {
+    if (Platform.OS === 'ios') {
+      // For iOS, show the DateTimePicker directly
+      setShowCalendar(true);
+    } else {
+      // For Android, show the modal with DateTimePicker
+      setShowCalendar(true);
+    }
+  };
+
   if (!loaded) {
     return null;
   }
@@ -146,7 +159,7 @@ export default function DashboardScreen() {
           <View style={styles.userTextInfo}>
             <Text style={styles.greeting}>{userData ? userData.name : 'Loading...'}</Text>
           </View>
-          <TouchableOpacity onPress={() => setShowCalendar(true)} style={styles.dateButton}>
+          <TouchableOpacity onPress={handleDateButtonPress} style={styles.dateButton}>
             <Text style={styles.date}>{selectedDate.toDateString()}</Text>
             <FontAwesome name="calendar" size={20} color="#31256C" style={styles.calendarIcon} />
           </TouchableOpacity>
@@ -194,7 +207,13 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.caloriesContainer}>
             <Text style={styles.macroLabel}>Calories</Text>
-            <ProgressBar progress={safeDivision(Math.round(totalCalories), Math.round(userData.calorieGoal))} color="#31256C" style={styles.progressBar} />
+            <View style={styles.progressBarContainer}>
+              <ProgressBar 
+                progress={safeDivision(Math.round(totalCalories), Math.round(userData.calorieGoal))} 
+                color="#31256C"
+                style={styles.progressBar} 
+              />
+            </View>
             <Text style={styles.macroValue}>{Math.round(totalCalories)} / {Math.round(userData.calorieGoal)} kcal</Text>
           </View>
         </View>
@@ -268,13 +287,37 @@ export default function DashboardScreen() {
 
       {/* Calendar Modal */}
       {showCalendar && (
-        <Modal transparent={true} animationType="slide" visible={showCalendar} onRequestClose={() => setShowCalendar(false)}>
-          <View style={styles.overlay}>
-            <View style={styles.calendarContainer}>
-              <DateTimePicker value={selectedDate} mode="date" display="default" onChange={onDateChange} />
-              <Button title="Close" onPress={() => setShowCalendar(false)} />
-            </View>
-          </View>
+        <Modal 
+          transparent={true} 
+          animationType="fade" 
+          visible={showCalendar} 
+          onRequestClose={() => setShowCalendar(false)}
+        >
+          <TouchableOpacity 
+            style={styles.overlay} 
+            activeOpacity={1} 
+            onPress={() => setShowCalendar(false)}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.calendarContainer}>
+                <Text style={styles.calendarTitle}>Select Date</Text>
+                <DateTimePicker
+                  testID="dateTimePicker"
+                  value={selectedDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onDateChange}
+                  style={styles.datePicker}
+                />
+                <TouchableOpacity 
+                  style={styles.closeButton}
+                  onPress={() => setShowCalendar(false)}
+                >
+                  <Text style={styles.closeButtonText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
         </Modal>
       )}
     </ScrollView>
@@ -369,16 +412,18 @@ const styles = StyleSheet.create({
     fontFamily: 'AfacadFlux',
   },
   progressBar: {
-    height: 10,
-    borderRadius: 5,
+    height: 7, // Increased height
+    borderRadius: 8,
     width: '95%',
-    backgroundColor: '#E0E0E0', // Add this to see empty bar
+    backgroundColor: '#E0E0E0', // Light background for contrast
+    marginVertical: 0, // Added vertical margin
   },
   progressBarSmall: {
-    height: 8,
-    borderRadius: 4,
+    height: 5, // Increased height
+    borderRadius: 6,
     width: '100%',
-    backgroundColor: '#E0E0E0', // Add this to see empty bar
+    backgroundColor: '#E0E0E0', // Light background for contrast
+    marginVertical: 0, // Added vertical margin
   },
   mealsSection: {
     marginBottom: 30,
@@ -442,14 +487,22 @@ const styles = StyleSheet.create({
   calendarContainer: {
     backgroundColor: '#fff',
     padding: 20,
-    borderRadius: 10,
+    borderRadius: 15,
     alignItems: 'center',
+    width: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   progressBarContainer: {
     width: '100%',
     backgroundColor: '#E0E0E0',
-    borderRadius: 4,
+    borderRadius: 8,
     overflow: 'hidden',
+    padding: 2, // Add padding around the progress bar
+    marginVertical: 8, // Add space above and below
   },
   mealHeader: {
     flexDirection: 'row',
@@ -489,11 +542,36 @@ const styles = StyleSheet.create({
   },
   editIconContainer: {
     position: 'absolute',
-    top: 10,
+    bottom: 10,
     right: 10,
     width: 30,
     height: 30,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F5F5F5', // Light background for contrast
+    borderRadius: 15, // Make it circular
+  },
+  calendarTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#31256C',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  datePicker: {
+    width: 300,
+  },
+  closeButton: {
+    backgroundColor: '#31256C',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    marginTop: 20,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'AfacadFlux',
   },
 });

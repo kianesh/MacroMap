@@ -2,7 +2,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
-import { Alert, Image, Keyboard, Linking, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../FirebaseConfig';
 
 interface NutritionInfo {
@@ -80,7 +80,7 @@ export default function AdjustServingScreen() {
         carbs: adjustedMacros.carbs,
         calories: adjustedMacros.calories,
         serving: isBranded ? `${servingQty} ${mealData.serving_unit}` : `${grams}g`,
-        image_url: mealData.image_url, // Add this line
+        image_url: mealData.image_url,
         timestamp: Timestamp.now(),
       });
 
@@ -90,6 +90,24 @@ export default function AdjustServingScreen() {
       console.error('Error logging meal:', error);
       Alert.alert('Error', 'Failed to log meal');
     }
+  };
+
+  const handleCancel = () => {
+    Alert.alert(
+      "Cancel",
+      "Are you sure you want to cancel adding this meal?",
+      [
+        { 
+          text: "No", 
+          style: "cancel" 
+        },
+        { 
+          text: "Yes", 
+          style: "destructive", 
+          onPress: () => router.back()
+        }
+      ]
+    );
   };
 
   const incrementServing = () => {
@@ -103,128 +121,145 @@ export default function AdjustServingScreen() {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <KeyboardAvoidingView 
+      style={{flex: 1}} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <FontAwesome name="chevron-left" size={24} color="#31256C" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Adjust Serving</Text>
-          <View style={{width: 24}}></View>
-        </View>
-        
-        <View style={styles.foodInfoContainer}>
-          {mealData.image_url ? (
-            <Image 
-              source={{ uri: mealData.image_url }} 
-              style={styles.foodImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.foodImage, styles.placeholderImage]}>
-              <Text style={styles.placeholderText}>No Image</Text>
-            </View>
-          )}
-          <Text style={styles.foodName}>{mealData.food_name}</Text>
-          {mealData.brand_name && <Text style={styles.brandName}>{mealData.brand_name}</Text>}
-        </View>
+        <ScrollView 
+          style={{flex: 1}}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={true}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+              <FontAwesome name="chevron-left" size={24} color="#31256C" />
+            </TouchableOpacity>
+            <Text style={styles.title}>Adjust Serving</Text>
+            <View style={{width: 24}}></View>
+          </View>
+          
+          <View style={styles.foodInfoContainer}>
+            {mealData.image_url ? (
+              <Image 
+                source={{ uri: mealData.image_url }} 
+                style={styles.foodImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.foodImage, styles.placeholderImage]}>
+                <Text style={styles.placeholderText}>No Image</Text>
+              </View>
+            )}
+            <Text style={styles.foodName}>{mealData.food_name}</Text>
+            {mealData.brand_name && <Text style={styles.brandName}>{mealData.brand_name}</Text>}
+          </View>
 
-        <View style={styles.servingContainer}>
-          {isBranded ? (
-            /* For branded foods - numeric stepper */
-            <View style={styles.servingSelectorContainer}>
-              <Text style={styles.servingLabel}>
-                Number of {mealData.serving_unit}s
-              </Text>
-              <View style={styles.stepperContainer}>
-                <TouchableOpacity onPress={decrementServing} style={styles.stepperButton}>
-                  <Text style={styles.stepperButtonText}>-</Text>
-                </TouchableOpacity>
-                <Text style={styles.servingValue}>{servingQty}</Text>
-                <TouchableOpacity onPress={incrementServing} style={styles.stepperButton}>
-                  <Text style={styles.stepperButtonText}>+</Text>
-                </TouchableOpacity>
+          <View style={styles.servingContainer}>
+            {isBranded ? (
+              <View style={styles.servingSelectorContainer}>
+                <Text style={styles.servingLabel}>
+                  Number of {mealData.serving_unit}s
+                </Text>
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity onPress={decrementServing} style={styles.stepperButton}>
+                    <Text style={styles.stepperButtonText}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.servingValue}>{servingQty}</Text>
+                  <TouchableOpacity onPress={incrementServing} style={styles.stepperButton}>
+                    <Text style={styles.stepperButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.servingSelectorContainer}>
+                <Text style={styles.servingLabel}>
+                  Amount (grams)
+                </Text>
+                <TextInput
+                  style={styles.gramsInput}
+                  keyboardType="numeric"
+                  value={grams}
+                  onChangeText={setGrams}
+                />
+              </View>
+            )}
+          </View>
+
+          <View style={styles.macrosContainer}>
+            <Text style={styles.macrosTitle}>Macros</Text>
+            <View style={styles.macroRow}>
+              <View style={styles.macroItem}>
+                <Text style={styles.macroLabel}>Calories</Text>
+                <Text style={styles.macroValue}>{adjustedMacros.calories} kcal</Text>
+              </View>
+              <View style={styles.macroItem}>
+                <Text style={styles.macroLabel}>Protein</Text>
+                <Text style={styles.macroValue}>{adjustedMacros.protein}g</Text>
               </View>
             </View>
-          ) : (
-            /* For generic foods - gram input */
-            <View style={styles.servingSelectorContainer}>
-              <Text style={styles.servingLabel}>
-                Amount (grams)
-              </Text>
-              <TextInput
-                style={styles.gramsInput}
-                keyboardType="numeric"
-                value={grams}
-                onChangeText={setGrams}
+            <View style={styles.macroRow}>
+              <View style={styles.macroItem}>
+                <Text style={styles.macroLabel}>Carbs</Text>
+                <Text style={styles.macroValue}>{adjustedMacros.carbs}g</Text>
+              </View>
+              <View style={styles.macroItem}>
+                <Text style={styles.macroLabel}>Fat</Text>
+                <Text style={styles.macroValue}>{adjustedMacros.fat}g</Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+            <Text style={styles.saveButtonText}>Add to Meals</Text>
+          </TouchableOpacity>
+
+          <View style={styles.deliveryButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.deliveryButton}
+              onPress={() => Linking.openURL(`https://www.ubereats.com/search?q=${encodeURIComponent(mealData.food_name)}`)}
+            >
+              <Image 
+                source={require('../assets/images/uber-eats-logo.jpg')} 
+                style={styles.deliveryLogo}
+                resizeMode="contain"
               />
-            </View>
-          )}
-        </View>
-
-        <View style={styles.macrosContainer}>
-          <Text style={styles.macrosTitle}>Macros</Text>
-          <View style={styles.macroRow}>
-            <View style={styles.macroItem}>
-              <Text style={styles.macroLabel}>Calories</Text>
-              <Text style={styles.macroValue}>{adjustedMacros.calories} kcal</Text>
-            </View>
-            <View style={styles.macroItem}>
-              <Text style={styles.macroLabel}>Protein</Text>
-              <Text style={styles.macroValue}>{adjustedMacros.protein}g</Text>
-            </View>
+              <Text style={styles.deliveryButtonText}>Order on Uber Eats</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.deliveryButton}
+              onPress={() => Linking.openURL(`https://www.doordash.com/search/store/${encodeURIComponent(mealData.food_name)}`)}
+            >
+              <Image 
+                source={require('../assets/images/doordash-logo.png')} 
+                style={styles.deliveryLogo}
+                resizeMode="contain"
+              />
+              <Text style={styles.deliveryButtonText}>Order on DoorDash</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.macroRow}>
-            <View style={styles.macroItem}>
-              <Text style={styles.macroLabel}>Carbs</Text>
-              <Text style={styles.macroValue}>{adjustedMacros.carbs}g</Text>
-            </View>
-            <View style={styles.macroItem}>
-              <Text style={styles.macroLabel}>Fat</Text>
-              <Text style={styles.macroValue}>{adjustedMacros.fat}g</Text>
-            </View>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Add to Meals</Text>
-        </TouchableOpacity>
-
-        <View style={styles.deliveryButtonsContainer}>
-          <TouchableOpacity 
-            style={styles.deliveryButton}
-            onPress={() => Linking.openURL(`https://www.ubereats.com/search?q=${encodeURIComponent(mealData.food_name)}`)}
-          >
-            <Image 
-              source={require('../assets/images/uber-eats-logo.jpg')} 
-              style={styles.deliveryLogo}
-              resizeMode="contain"
-            />
-            <Text style={styles.deliveryButtonText}>Order on Uber Eats</Text>
+          
+          <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
+            <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity 
-            style={styles.deliveryButton}
-            onPress={() => Linking.openURL(`https://www.doordash.com/search/store/${encodeURIComponent(mealData.food_name)}`)}
-          >
-            <Image 
-              source={require('../assets/images/doordash-logo.png')} 
-              style={styles.deliveryLogo}
-              resizeMode="contain"
-            />
-            <Text style={styles.deliveryButtonText}>Order on DoorDash</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={{height: 50}} />
+        </ScrollView>
       </View>
-    </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     backgroundColor: '#FAFAFA',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    padding: 20,
   },
   header: {
     flexDirection: 'row',
@@ -395,4 +430,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  cancelButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  cancelButtonText: {
+    color: '#FF3B30',
+    fontSize: 18,
+    fontWeight: '600',
+  }
 });

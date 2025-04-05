@@ -1,10 +1,11 @@
+import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { usePathname, useRouter } from 'expo-router';
 import { deleteUser, signOut } from 'firebase/auth';
 import { deleteDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
-import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db, storage } from '../FirebaseConfig';
 
 interface UserData {
@@ -25,6 +26,7 @@ interface UserData {
 
 export default function ProfileScreen() {
   const [userData, setUserData] = useState<UserData | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -97,32 +99,29 @@ export default function ProfileScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]) {
-        // Show loading state if you want
+        // Show loading state
+        setIsUploading(true);
+        
         const response = await fetch(result.assets[0].uri);
         const blob = await response.blob();
         
-        // Create a reference to the storage location
         const storageRef = ref(storage, `profilePictures/${user.uid}`);
-        
-        // Upload the image
         await uploadBytes(storageRef, blob);
         
-        // Get the download URL
         const downloadURL = await getDownloadURL(storageRef);
         
-        // Update Firestore with the profile picture URL
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, { profilePictureUrl: downloadURL });
         
-        // Update local state
         setUserData(prev => prev ? { ...prev, profilePictureUrl: downloadURL } : null);
+        setIsUploading(false);
         
-        // Optional: Show success message
-        alert('Profile picture updated successfully!');
+        Alert.alert('Success', 'Profile picture updated successfully!');
       }
     } catch (error) {
       console.error('Error uploading profile picture:', error);
-      alert('Failed to update profile picture. Please try again.');
+      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+      setIsUploading(false);
     }
   };
 
@@ -130,20 +129,30 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.backButton}>←</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <FontAwesome name="chevron-left" size={24} color="#31256C" />
           </TouchableOpacity>
-          <Text style={styles.title}>Profile</Text>
+          <View style={{flex: 1}} />
         </View>
 
         <View style={styles.profileSection}>
-          {userData?.profilePictureUrl ? (
-            <Image source={{ uri: userData.profilePictureUrl }} style={styles.profileImage} />
-          ) : (
-            <TouchableOpacity onPress={handleProfilePictureUpload} style={styles.profileImagePlaceholder}>
-              <Text>Add Photo</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity 
+            onPress={handleProfilePictureUpload} 
+            style={styles.profileImageContainer}
+          >
+            {userData?.profilePictureUrl ? (
+              <>
+                <Image source={{ uri: userData.profilePictureUrl }} style={styles.profileImage} />
+                <View style={styles.editOverlay}>
+                  <FontAwesome name="camera" size={18} color="#FFFFFF" />
+                </View>
+              </>
+            ) : (
+              <View style={styles.profileImagePlaceholder}>
+                <FontAwesome name="camera" size={24} color="#999" />
+              </View>
+            )}
+          </TouchableOpacity>
           <Text style={styles.name}>{userData?.name}</Text>
           <Text style={styles.email}>{userData?.email}</Text>
         </View>
@@ -186,7 +195,10 @@ export default function ProfileScreen() {
           <TouchableOpacity style={styles.menuItem}>
             <Text style={styles.menuItemText}>About app</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => router.push('/(tabs)/settings')}
+          >
             <Text style={styles.menuItemText}>Settings</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.menuItem} onPress={handleSignOut}>
@@ -220,6 +232,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  profileImageContainer: {
+    position: 'relative',
+    marginBottom: 15,
+  },
   profileImage: {
     width: 100,
     height: 100,
@@ -234,6 +250,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
+  },
+  editOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#31256C',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  changePhotoText: {
+    color: '#31256C',
+    fontSize: 16,
+    marginTop: 5,
   },
   name: {
     fontSize: 24,
