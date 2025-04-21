@@ -1,5 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import axios from 'axios';
+import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -13,7 +14,11 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { FATSECRET_CLIENT_KEY, FATSECRET_CLIENT_SECRET } from 'react-native-dotenv';
+
+const {
+  FATSECRET_CLIENT_KEY,
+  FATSECRET_CLIENT_SECRET
+} = Constants.expoConfig?.extra || {};
 
 SplashScreen.preventAutoHideAsync();
 

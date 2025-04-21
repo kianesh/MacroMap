@@ -41,7 +41,7 @@ const index = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Image source={require('../assets/images/MacroMap-03.png')} style={styles.logo} />
+      <Image source={require('../assets/images/Logo_Index.png')} style={styles.logo} />
       <TextInput style={styles.textInput} placeholder="email" value={email} onChangeText={setEmail} />
       <TextInput style={styles.textInput} placeholder="password" value={password} onChangeText={setPassword} secureTextEntry />
       <TouchableOpacity style={styles.button} onPress={signIn}>
