@@ -5,6 +5,10 @@ import {Request, Response} from "express";
 import * as functions from "firebase-functions";
 import {searchGoogleImagesWithLLM} from "./foodImage";
 
+// Re-export the ML forecast proxy so Firebase deploys it as a callable.
+// (Only addition to this file — no existing function logic is touched.)
+export {forecastNutrition} from "./ml-proxy";
+
 const FATSECRET_BASE_URL = "https://platform.fatsecret.com/rest/server.api";
 const NUTRITIONIX_BASE_URL = "https://trackapi.nutritionix.com/v2";
 
@@ -281,6 +285,173 @@ export const findFoodImage = functions.https.onCall(
       throw new functions.https.HttpsError(
         "internal",
         "Failed to find images"
+      );
+    }
+  }
+);
+
+export const searchFoods = functions.https.onCall(
+  async (request: functions.https.CallableRequest) => {
+    const {query} = request.data;
+    if (!query || typeof query !== "string") {
+      throw new functions.https.HttpsError(
+        "invalid-argument", "Query is required"
+      );
+    }
+
+    const method = "GET";
+    const params = {
+      method: "foods.search",
+      search_expression: query,
+      format: "json",
+      max_results: 50,
+      page_number: 0,
+    };
+    const oauthParams = {
+      oauth_consumer_key: process.env.FATSECRET_CLIENT_KEY || "",
+      oauth_nonce: Math.random().toString(36).substring(2),
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+      oauth_version: "1.0",
+    };
+    const allParams: Record<string, string | number> = {
+      ...params, ...oauthParams};
+    const paramString = Object.keys(allParams)
+      .sort()
+      .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(
+        allParams[k].toString())}`)
+      .join("&");
+    const baseString = `${method.toUpperCase()}&${encodeURIComponent(
+      FATSECRET_BASE_URL)}&${encodeURIComponent(paramString)}`;
+    const signingKey = `${encodeURIComponent(
+      process.env.FATSECRET_CLIENT_SECRET || "")}&`;
+    const signature = crypto
+      .createHmac("sha1", signingKey)
+      .update(baseString)
+      .digest("base64");
+
+    try {
+      const response = await axios.get(FATSECRET_BASE_URL, {
+        params: {...params, ...oauthParams, oauth_signature: signature},
+      });
+
+      if (!response.data.foods?.food) return {foods: []};
+
+      const raw = Array.isArray(response.data.foods.food) ?
+        response.data.foods.food : [response.data.foods.food];
+
+      const foods = raw.map((food: any) => {
+        const desc = typeof food.food_description === "string" ?
+          food.food_description : "";
+        const cal = desc.match(/Calories:\s*(\d+)kcal/);
+        const fat = desc.match(/Fat:\s*([\d.]+)g/);
+        const carb = desc.match(/Carbs:\s*([\d.]+)g/);
+        const prot = desc.match(/Protein:\s*([\d.]+)g/);
+        return {
+          food_name: food.food_name,
+          brand_name: food.brand_name || "",
+          serving_qty: 1,
+          serving_unit: "serving",
+          nf_calories: cal ? parseInt(cal[1]) : 0,
+          nf_total_fat: fat ? parseFloat(fat[1]) : 0,
+          nf_total_carbohydrate: carb ? parseFloat(carb[1]) : 0,
+          nf_protein: prot ? parseFloat(prot[1]) : 0,
+        };
+      });
+
+      return {foods};
+    } catch (err) {
+      console.error("searchFoods error:", err);
+      throw new functions.https.HttpsError(
+        "internal", "Failed to search foods"
+      );
+    }
+  }
+);
+
+export const parseNaturalLanguageMeal = functions.https.onCall(
+  async (request: functions.https.CallableRequest) => {
+    const {description} = request.data;
+    if (!description || typeof description !== "string") {
+      throw new functions.https.HttpsError(
+        "invalid-argument", "Description is required"
+      );
+    }
+
+    try {
+      const tokenRes = await axios.post(
+        "https://oauth.fatsecret.com/connect/token",
+        new URLSearchParams({
+          grant_type: "client_credentials",
+          scope: "basic",
+        }).toString(),
+        {
+          auth: {
+            username: process.env.FATSECRET_CLIENT_KEY || "",
+            password: process.env.FATSECRET_CLIENT_SECRET || "",
+          },
+          headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        }
+      );
+
+      const nlpRes = await axios.post(
+        "https://platform.fatsecret.com/rest/natural-language-processing/v1",
+        {meal_description: description},
+        {
+          headers: {
+            "Authorization": `Bearer ${tokenRes.data.access_token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const foods = (nlpRes.data.foods || []).map((item: any) => ({
+        food_name: item.food_name || "Unknown",
+        brand_name: item.brand_name || "",
+        serving_qty: item.serving_quantity || 1,
+        serving_unit: item.serving_unit || "serving",
+        nf_calories: item.calories || 0,
+        nf_total_fat: item.fat || 0,
+        nf_protein: item.protein || 0,
+        nf_total_carbohydrate: item.carbohydrate || 0,
+      }));
+
+      return {foods};
+    } catch (err) {
+      console.error("parseNaturalLanguageMeal error:", err);
+      throw new functions.https.HttpsError(
+        "internal", "Failed to parse meal description"
+      );
+    }
+  }
+);
+
+export const searchNearbyRestaurants = functions.https.onCall(
+  async (request: functions.https.CallableRequest) => {
+    const {lat, lng, radius = 5000} = request.data;
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      throw new functions.https.HttpsError(
+        "invalid-argument", "lat and lng are required numbers"
+      );
+    }
+
+    try {
+      const response = await axios.get(
+        "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+        {
+          params: {
+            location: `${lat},${lng}`,
+            radius,
+            type: "restaurant",
+            key: process.env.GOOGLE_MAPS_API_KEY || "",
+          },
+        }
+      );
+      return {restaurants: response.data.results || []};
+    } catch (err) {
+      console.error("searchNearbyRestaurants error:", err);
+      throw new functions.https.HttpsError(
+        "internal", "Failed to fetch nearby restaurants"
       );
     }
   }

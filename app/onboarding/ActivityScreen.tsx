@@ -31,6 +31,9 @@ export default function ActivityScreen() {
       <TouchableOpacity style={styles.button} onPress={() => saveActivityLevel('low active')}>
         <Text style={styles.buttonText}>Low Active</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={styles.button} onPress={() => saveActivityLevel('moderate')}>
+        <Text style={styles.buttonText}>Moderate</Text>
+      </TouchableOpacity>
       <TouchableOpacity style={styles.button} onPress={() => saveActivityLevel('active')}>
         <Text style={styles.buttonText}>Active</Text>
       </TouchableOpacity>

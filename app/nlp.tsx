@@ -1,9 +1,8 @@
 import { FontAwesome } from '@expo/vector-icons';
-import axios from 'axios';
-import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -15,15 +14,7 @@ import {
     View,
 } from 'react-native';
 
-const {
-  FATSECRET_CLIENT_KEY,
-  FATSECRET_CLIENT_SECRET
-} = Constants.expoConfig?.extra || {};
-
 SplashScreen.preventAutoHideAsync();
-
-const NLP_ENDPOINT = 'https://platform.fatsecret.com/rest/natural-language-processing/v1';
-const TOKEN_ENDPOINT = 'https://oauth.fatsecret.com/connect/token';
 
 interface NutritionInfo {
   food_name: string;
@@ -49,6 +40,9 @@ export default function NLPScreen() {
 
   const router = useRouter();
 
+  const firebaseFunctions = getFunctions();
+  const parseNLPCallable = httpsCallable(firebaseFunctions, 'parseNaturalLanguageMeal');
+
   const [loaded] = useFonts({
     'AfacadFlux': require('../assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf'),
   });
@@ -58,27 +52,6 @@ export default function NLPScreen() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
-
-  const getAccessToken = async (): Promise<string> => {
-    const response = await axios.post(
-      TOKEN_ENDPOINT,
-      new URLSearchParams({
-        grant_type: 'client_credentials',
-        scope: 'basic',
-      }),
-      {
-        auth: {
-          username: FATSECRET_CLIENT_KEY,
-          password: FATSECRET_CLIENT_SECRET,
-        },
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      }
-    );
-
-    return response.data.access_token;
-  };
 
   const processNaturalLanguageQuery = async (query: string) => {
     if (!query.trim()) {
@@ -95,32 +68,8 @@ export default function NLPScreen() {
     setResults([]);
 
     try {
-      const token = await getAccessToken();
-
-      const response = await axios.post(
-        NLP_ENDPOINT,
-        { meal_description: query },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      const items = response.data.foods || [];
-
-      const parsedResults: NutritionInfo[] = items.map((item: any) => ({
-        food_name: item.food_name || 'Unknown',
-        serving_qty: item.serving_quantity || 1,
-        serving_unit: item.serving_unit || 'serving',
-        nf_calories: item.calories || 0,
-        nf_protein: item.protein || 0,
-        nf_total_fat: item.fat || 0,
-        nf_total_carbohydrate: item.carbohydrate || 0,
-        brand_name: item.brand_name || '',
-      }));
-
+      const callResult = await parseNLPCallable({ description: query });
+      const parsedResults = ((callResult.data as any).foods || []) as NutritionInfo[];
       setResults(parsedResults);
     } catch (error) {
       console.error('Error during NLP request:', error);

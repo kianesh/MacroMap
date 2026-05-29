@@ -87,9 +87,20 @@ export default function TabLayout() {
           options={{
             ...commonScreenOptions,
             title: 'Reports',
-            tabBarItemStyle: { marginLeft: 140 },
+            tabBarItemStyle: { marginLeft: 120 },
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon name="bar-chart" color={color} focused={focused} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="trends"
+          options={{
+            ...commonScreenOptions,
+            title: 'Trends',
+            tabBarItemStyle: { marginLeft: 25 },
+            tabBarIcon: ({ color, focused }) => (
+              <TabBarIcon name="line-chart" color={color} focused={focused} />
             ),
           }}
         />
@@ -98,7 +109,7 @@ export default function TabLayout() {
           options={{
             ...commonScreenOptions,
             title: 'Settings',
-            tabBarItemStyle: { marginLeft: 35 },
+            tabBarItemStyle: { marginLeft: 25 },
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon name="cog" color={color} focused={focused} />
             ),

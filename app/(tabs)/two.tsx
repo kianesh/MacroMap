@@ -1,21 +1,13 @@
 import { FontAwesome } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { cacheImageUrl, getCachedImageUrl } from '../../utils/imageCache';
-
-// Get environment variables from Expo Constants
-const {
-  GOOGLE_MAPS_API_KEY,
-  GOOGLE_CUSTOM_SEARCH_ENGINE_ID,
-  GOOGLE_CUSTOM_SEARCH_API_KEY
-} = Constants.expoConfig?.extra || {};
 
 // Conditionally import MapView
 let MapView: any = null;
@@ -25,8 +17,6 @@ if (Platform.OS !== 'web') {
   MapView = Maps.default;
   Marker = Maps.Marker;
 }
-
-const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -71,7 +61,12 @@ export default function MapScreen() {
   const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(true);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const router = useRouter();
-  
+
+  const firebaseFunctions = getFunctions();
+  const searchFoodsCallable = httpsCallable(firebaseFunctions, 'searchFoods');
+  const searchNearbyCallable = httpsCallable(firebaseFunctions, 'searchNearbyRestaurants');
+  const findFoodImageCallable = httpsCallable(firebaseFunctions, 'findFoodImage');
+
   const [loaded, error] = useFonts({
     'AfacadFlux': require('../../assets/fonts/AfacadFlux-VariableFont_slnt,wght.ttf'),
   });
@@ -107,21 +102,11 @@ export default function MapScreen() {
   
   const fetchNearbyRestaurants = async (coords: LocationCoords) => {
     try {
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/place/nearbysearch/json',
-        {
-          params: {
-            location: `${coords.latitude},${coords.longitude}`,
-            radius: 5000, // 5km radius
-            type: 'restaurant',
-            key: GOOGLE_MAPS_API_KEY
-          }
-        }
-      );
-      
-      if (response.data.results) {
-        setNearbyRestaurants(response.data.results);
-      }
+      const result = await searchNearbyCallable({
+        lat: coords.latitude,
+        lng: coords.longitude,
+      });
+      setNearbyRestaurants((result.data as any).restaurants || []);
     } catch (error) {
       console.error('Error fetching nearby restaurants:', error);
     }
@@ -157,74 +142,20 @@ export default function MapScreen() {
     }
   };
 
-  const generateOAuthSignature = (method: string, url: string, queryParams: any) => {
-    // This is a simplified version - you'd want a more secure implementation
-    // for a production app
-    return {
-      oauth_consumer_key: process.env.FATSECRET_CLIENT_KEY,
-      oauth_signature_method: 'HMAC-SHA1',
-      oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-      oauth_nonce: Math.random().toString(36).substring(2),
-      oauth_version: '1.0',
-      oauth_signature: 'dummy_signature',
-    };
-  };
-
   // Main search function
   const searchFoods = async (restaurantName = query) => {
     if (!restaurantName.trim()) return;
-    
-    // Clear any previous processing
+
     setProcessingImageIds(new Set());
-    
-    // Save search term to recents
     await saveRecentSearch(restaurantName);
     setIsLoading(true);
-    
+
     try {
-      // Handle special cases for common restaurant chains
-      const normalizedQuery = restaurantName.trim().toLowerCase();
-      
-      // Generate parameters for search
-      const method = 'GET';
-      const searchParams = {
-        method: 'foods.search',
-        search_expression: restaurantName,
-        format: 'json',
-        max_results: 50,
-        page_number: 0
-      };
-
-      const oauthHeaders = generateOAuthSignature(method, FATSECRET_API_URL, searchParams);
-
-      const response = await axios.get(FATSECRET_API_URL, {
-        params: {
-          ...searchParams,
-          ...oauthHeaders
-        }
-      });
-
-      if (response.data.foods?.food) {
-        const foods = Array.isArray(response.data.foods.food) ? 
-          response.data.foods.food : [response.data.foods.food];
-
-        const transformedResults = foods.map(food => ({
-          food_name: food.food_name,
-          brand_name: food.brand_name || '',
-          serving_qty: food.servings?.serving?.serving_description ? 1 : 100,
-          serving_unit: food.servings?.serving?.serving_description || 'g',
-          nf_calories: parseFloat(food.food_description.split('|')[0].replace('Calories: ', '')) || 0,
-          nf_total_fat: parseFloat(food.food_description.match(/Fat: ([\d.]+)g/)?.[1] || '0') || 0,
-          nf_protein: parseFloat(food.food_description.match(/Protein: ([\d.]+)g/)?.[1] || '0') || 0,
-          nf_total_carbohydrate: parseFloat(food.food_description.match(/Carbs: ([\d.]+)g/)?.[1] || '0') || 0
-        }));
-
-        setFoodResults(transformedResults);
-        
-        // Process images sequentially to avoid rate limits
+      const callResult = await searchFoodsCallable({ query: restaurantName });
+      const transformedResults = ((callResult.data as any).foods || []) as NutritionInfo[];
+      setFoodResults(transformedResults);
+      if (transformedResults.length > 0) {
         setTimeout(() => processImagesSequentially(transformedResults), 500);
-      } else {
-        setFoodResults([]);
       }
     } catch (error) {
       console.error('Error searching foods:', error);
@@ -273,32 +204,16 @@ export default function MapScreen() {
     }
   };
   
-  // Simple function to find image without using LLM
+  // Simple function to find image via Cloud Function
   const findSimpleImage = async (foodName: string, brandName: string): Promise<string | null> => {
     try {
-      // Check cache first
       const cachedImageUrl = await getCachedImageUrl(foodName, brandName);
       if (cachedImageUrl) return cachedImageUrl;
-      
-      const query = `${foodName} ${brandName} food photo`;
-      
-      const response = await axios.get(
-        'https://www.googleapis.com/customsearch/v1',
-        {
-          params: {
-            key: GOOGLE_CUSTOM_SEARCH_API_KEY,
-            cx: GOOGLE_CUSTOM_SEARCH_ENGINE_ID,
-            q: query,
-            searchType: 'image',
-            num: 1,
-            imgSize: 'medium',
-            safe: 'active',
-          }
-        }
-      );
-      
-      if (response.data.items && response.data.items.length > 0) {
-        const imageUrl = response.data.items[0].link;
+
+      const imageQuery = `${foodName} ${brandName} food photo`;
+      const callResult = await findFoodImageCallable({ query: imageQuery });
+      const imageUrl = (callResult.data as any).imageUrl as string | null;
+      if (imageUrl) {
         await cacheImageUrl(foodName, brandName, imageUrl);
         return imageUrl;
       }

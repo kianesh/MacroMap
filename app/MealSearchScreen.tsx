@@ -1,26 +1,12 @@
 import { FontAwesome } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import CryptoJS from 'crypto-js';
-import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import React, { useCallback, useEffect, useState, useRef } from 'react'; // Added useRef
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { cacheImageUrl, getCachedImageUrl } from '../utils/imageCache';
-import { openAILimiter } from '../utils/rateLimiter';
-
-// Get environment variables from Expo Constants
-const {
-  FATSECRET_CLIENT_KEY,
-  FATSECRET_CLIENT_SECRET,
-  GOOGLE_CUSTOM_SEARCH_ENGINE_ID,
-  GOOGLE_CUSTOM_SEARCH_API_KEY
-} = Constants.expoConfig?.extra || {};
-
-const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -51,6 +37,7 @@ export default function MealSearchScreen() {
 
   const functions = getFunctions();
   const findFoodImage = httpsCallable(functions, 'findFoodImage');
+  const searchFoodsCallable = httpsCallable(functions, 'searchFoods');
 
   const [processingImageIds, setProcessingImageIds] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(0);
@@ -81,31 +68,6 @@ export default function MealSearchScreen() {
     
     loadRecentSearches();
   }, [loaded, error]);
-
-  const generateOAuthSignature = (method: string, url: string, params: any) => {
-    const oauthParams = {
-      oauth_consumer_key: FATSECRET_CLIENT_KEY,
-      oauth_nonce: Math.random().toString(36).substring(2),
-      oauth_signature_method: 'HMAC-SHA1',
-      oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-      oauth_version: '1.0'
-    };
-
-    const allParams = { ...params, ...oauthParams };
-    const paramString = Object.keys(allParams)
-      .sort()
-      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(allParams[key])}`)
-      .join('&');
-
-    const baseString = `${method.toUpperCase()}&${encodeURIComponent(url)}&${encodeURIComponent(paramString)}`;
-    const signingKey = `${encodeURIComponent(FATSECRET_CLIENT_SECRET)}&`;
-    const signature = CryptoJS.HmacSHA1(baseString, signingKey).toString(CryptoJS.enc.Base64);
-
-    return {
-      ...oauthParams,
-      oauth_signature: signature
-    };
-  };
 
   const loadRecentSearches = async () => {
     try {
@@ -152,71 +114,27 @@ export default function MealSearchScreen() {
     await saveRecentSearch(searchTerm);
 
     try {
-      const method = 'GET';
-      const path = FATSECRET_API_URL;
-      const params = {
-        method: 'foods.search',
-        search_expression: searchTerm,
-        format: 'json',
-        max_results: 50, // Fetch more results initially if needed for pagination
-        page_number: 0,
-      };
-      const oauthHeaders = generateOAuthSignature(method, path, params);
-
-      const response = await axios.get(path, { params: { ...params, ...oauthHeaders } });
+      const callResult = await searchFoodsCallable({ query: searchTerm });
 
       // --- Check if this search is still the current one ---
       if (searchId !== currentSearchId.current) {
         console.log("Search aborted, new search started.");
-        return; // Abort if a newer search has begun
+        return;
       }
       // --- End Check ---
 
-      if (response.data.foods?.food) {
-        const foods = Array.isArray(response.data.foods.food)
-          ? response.data.foods.food
-          : [response.data.foods.food];
+      const transformedResults = ((callResult.data as any).foods as NutritionInfo[] || [])
+        .map((food: NutritionInfo) => ({ ...food, image_url: undefined as string | undefined }));
 
-        const transformedResults = foods.map(food => {
-          // Extract food details
-          const foodDetails = typeof food.food_description === 'string'
-            ? food.food_description
-            : '';
-
-          // Parse macros from the food description
-          const caloriesMatch = foodDetails.match(/Calories: (\d+)kcal/);
-          const fatMatch = foodDetails.match(/Fat: ([\d.]+)g/);
-          const carbsMatch = foodDetails.match(/Carbs: ([\d.]+)g/);
-          const proteinMatch = foodDetails.match(/Protein: ([\d.]+)g/);
-
-          return {
-            food_name: food.food_name,
-            brand_name: food.brand_name || '',
-            serving_qty: 1,
-            serving_unit: 'serving',
-            nf_calories: caloriesMatch ? parseInt(caloriesMatch[1]) : 0,
-            nf_total_fat: fatMatch ? parseFloat(fatMatch[1]) : 0,
-            nf_total_carbohydrate: carbsMatch ? parseFloat(carbsMatch[1]) : 0,
-            nf_protein: proteinMatch ? parseFloat(proteinMatch[1]) : 0,
-            image_url: undefined, // Initialize image_url as undefined
-          };
-        });
-
-        // --- Check again before setting state ---
-        if (searchId === currentSearchId.current) {
-          setResults(transformedResults);
-          // Trigger image processing for the *first page* of new results
+      // --- Check again before setting state ---
+      if (searchId === currentSearchId.current) {
+        setResults(transformedResults);
+        if (transformedResults.length > 0) {
           processImagesSequentially(transformedResults.slice(0, ITEMS_PER_PAGE), searchId);
         }
-        // --- End Check ---
-
-      } else {
-         // --- Check again before setting state ---
-         if (searchId === currentSearchId.current) {
-            setResults([]); // Ensure results are cleared if API returns no food
-         }
-         // --- End Check ---
       }
+      // --- End Check ---
+
     } catch (error) {
       console.error('Error searching foods:', error);
        // --- Check again before setting state ---
@@ -314,21 +232,10 @@ export default function MealSearchScreen() {
         return; // Found in cache, no need to fetch
       }
 
-      // 2. If not cached, fetch using Google Search (rate limited)
-      const query = `${item.food_name} ${item.brand_name || ''} food photo`;
-      const searchResponse = await openAILimiter.schedule(() =>
-        axios.get('https://www.googleapis.com/customsearch/v1', {
-          params: { /* ... your params ... */
-            key: GOOGLE_CUSTOM_SEARCH_API_KEY,
-            cx: GOOGLE_CUSTOM_SEARCH_ENGINE_ID,
-            q: query,
-            searchType: 'image',
-            num: 1, // Only need the top result
-            imgSize: 'medium',
-            safe: 'active',
-          }
-        })
-      );
+      // 2. If not cached, use findFoodImage Cloud Function
+      const imageQuery = `${item.food_name} ${item.brand_name || ''} food photo`;
+      const callResult = await findFoodImage({ query: imageQuery });
+      const bestImageUrl = (callResult.data as any).imageUrl as string | null;
 
       // --- Check searchId again after await ---
       if (searchId !== currentSearchId.current) {
@@ -337,36 +244,31 @@ export default function MealSearchScreen() {
       }
       // --- End Check ---
 
-      if (searchResponse.data.items && searchResponse.data.items.length > 0) {
-        const bestImageUrl = searchResponse.data.items[0].link;
-
+      if (bestImageUrl) {
         // --- Check searchId before state update ---
         if (searchId === currentSearchId.current) {
-          setResults(prev => {
-            // Prevent unnecessary updates
+          setResults((prev: NutritionInfo[]) => {
             if (prev[index]?.image_url === bestImageUrl) return prev;
             const updated = [...prev];
-             if (updated[index]) { // Ensure index is valid
-                updated[index] = { ...updated[index], image_url: bestImageUrl };
-             }
+            if (updated[index]) {
+              updated[index] = { ...updated[index], image_url: bestImageUrl };
+            }
             return updated;
           });
-          // Cache the newly fetched image
           await cacheImageUrl(item.food_name, item.brand_name, bestImageUrl);
         }
         // --- End Check ---
       } else {
-         // Optional: Set a placeholder or default image if none found
-         if (searchId === currentSearchId.current) {
-             setResults(prev => {
-                 if (prev[index]?.image_url === 'placeholder_or_null') return prev; // Avoid update if already placeholder
-                 const updated = [...prev];
-                 if (updated[index]) {
-                     updated[index] = { ...updated[index], image_url: 'placeholder_or_null' }; // Or null
-                 }
-                 return updated;
-             });
-         }
+        if (searchId === currentSearchId.current) {
+          setResults((prev: NutritionInfo[]) => {
+            if (prev[index]?.image_url === 'placeholder_or_null') return prev;
+            const updated = [...prev];
+            if (updated[index]) {
+              updated[index] = { ...updated[index], image_url: 'placeholder_or_null' };
+            }
+            return updated;
+          });
+        }
       }
 
     } catch (error) {

@@ -1,17 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import Constants from 'expo-constants';
 import * as BackgroundFetch from 'expo-background-fetch';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
-
-// Access environment variables
-const {
-  GOOGLE_MAPS_API_KEY,
-  FATSECRET_CLIENT_KEY,
-  FATSECRET_CLIENT_SECRET
-} = Constants.expoConfig?.extra || {};
 
 const BACKGROUND_NEARBY_MEALS_TASK = 'BACKGROUND_NEARBY_MEALS_TASK';
 const BACKGROUND_FETCH_TASK = 'BACKGROUND_FETCH_TASK';
@@ -104,19 +96,14 @@ async function checkForMacroFriendlyRestaurants(coords: { latitude: number, long
 // Find nearby restaurants
 async function findNearbyRestaurants(coords: { latitude: number, longitude: number }) {
   try {
-    const response = await axios.get(
-      'https://maps.googleapis.com/maps/api/place/nearbysearch/json',
-      {
-        params: {
-          location: `${coords.latitude},${coords.longitude}`,
-          radius: 1000, // 1km radius
-          type: 'restaurant',
-          key: GOOGLE_MAPS_API_KEY,
-        },
-      }
-    );
-    
-    return response.data.results || [];
+    const functions = getFunctions();
+    const searchNearbyCallable = httpsCallable(functions, 'searchNearbyRestaurants');
+    const result = await searchNearbyCallable({
+      lat: coords.latitude,
+      lng: coords.longitude,
+      radius: 1000,
+    });
+    return (result.data as any).restaurants || [];
   } catch (error) {
     console.error('Error finding nearby restaurants:', error);
     return [];

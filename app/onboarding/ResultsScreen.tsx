@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth, db } from '../FirebaseConfig';
+import { auth, db } from '@/FirebaseConfig';
 
 export default function ResultsScreen() {
   const router = useRouter();
@@ -42,9 +42,9 @@ export default function ResultsScreen() {
     // Calculate BMR
     let bmr;
     if (gender === 'male') {
-      bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
+      bmr = 10 * weight + 6.25 * height - 5 * age + 5;
     } else {
-      bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age);
+      bmr = 10 * weight + 6.25 * height - 5 * age - 161;
     }
 
     let activityMultiplier;
@@ -55,11 +55,14 @@ export default function ResultsScreen() {
       case 'low active':
         activityMultiplier = 1.375;
         break;
-      case 'active':
+      case 'moderate':
         activityMultiplier = 1.55;
         break;
-      case 'very active':
+      case 'active':
         activityMultiplier = 1.725;
+        break;
+      case 'very active':
+        activityMultiplier = 1.9;
         break;
       default:
         activityMultiplier = 1.2;
